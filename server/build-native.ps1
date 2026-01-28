@@ -14,7 +14,7 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 Write-Host "✅ Build complete!" -ForegroundColor Green
-Write-Host "📦 Program binary: target/deploy/anonymaus_executor.so" -ForegroundColor Green
+Write-Host "📦 Program binary: target/deploy/void_executor.so" -ForegroundColor Green
 
 # Return to original directory
 Set-Location ../..

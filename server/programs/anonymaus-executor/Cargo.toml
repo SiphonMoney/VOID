@@ -1,12 +1,12 @@
 [package]
-name = "anonymaus-executor"
+name = "void-executor"
 version = "0.1.0"
-description = "AnonyMaus Executor Program for Solana - Native Implementation"
+description = "Void Executor Program for Solana - Native Implementation"
 edition = "2021"
 
 [lib]
 crate-type = ["cdylib", "lib"]
-name = "anonymaus_executor"
+name = "void_executor"
 
 [features]
 no-entrypoint = []

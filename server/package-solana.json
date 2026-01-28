@@ -1,7 +1,7 @@
 {
-  "name": "anonymaus-solana-tee-server",
+  "name": "void-solana-tee-server",
   "version": "1.0.0",
-  "description": "Mock TEE server for Solana - AnonyMaus",
+  "description": "Anonymizer for Solana - Void",
   "main": "server.js",
   "type": "module",
   "scripts": {
@@ -17,7 +17,7 @@
   "keywords": [
     "solana",
     "tee",
-    "anonymaus",
+    "void",
     "privacy"
   ],
   "author": "",

@@ -12,4 +12,4 @@ cd programs/anonymaus-executor
 cargo build-sbf
 
 echo "✅ Build complete!"
-echo "📦 Program binary: target/deploy/anonymaus_executor.so"
+echo "📦 Program binary: target/deploy/void_executor.so"

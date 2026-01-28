@@ -1,4 +1,4 @@
-//! AnonyMaus Executor Program - Native Solana Implementation
+//! Void Executor Program - Native Solana Implementation
 //! 
 //! This program manages user deposits and executes transactions based on signed intents.
 //! No Anchor framework - pure native Solana program.

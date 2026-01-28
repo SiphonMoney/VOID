@@ -1,7 +1,7 @@
 {
-  "name": "anonymaus-solana-backend",
+  "name": "void-solana-backend",
   "version": "1.0.0",
-  "description": "Solana backend server for AnonyMaus - wallet generation and funding",
+  "description": "Solana backend server for Void - wallet generation and funding",
   "main": "server.js",
   "type": "module",
   "scripts": {
@@ -11,7 +11,7 @@
   },
   "keywords": [
     "solana",
-    "anonymaus",
+    "void",
     "wallet",
     "backend"
   ],

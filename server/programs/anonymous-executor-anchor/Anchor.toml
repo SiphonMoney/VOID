@@ -6,13 +6,13 @@ resolution = true
 skip-lint = false
 
 [programs.localnet]
-anonymaus_executor = "8VrPkLsBssC7zodetgqQUgpLRzwjE75VE6uSGAbLdy4Y"
+void_executor = "8VrPkLsBssC7zodetgqQUgpLRzwjE75VE6uSGAbLdy4Y"
 
 [programs.devnet]
-anonymaus_executor = "8VrPkLsBssC7zodetgqQUgpLRzwjE75VE6uSGAbLdy4Y"
+void_executor = "8VrPkLsBssC7zodetgqQUgpLRzwjE75VE6uSGAbLdy4Y"
 
 [programs.mainnet]
-anonymaus_executor = "8VrPkLsBssC7zodetgqQUgpLRzwjE75VE6uSGAbLdy4Y"
+void_executor = "8VrPkLsBssC7zodetgqQUgpLRzwjE75VE6uSGAbLdy4Y"
 
 [registry]
 url = "https://api.apr.dev"

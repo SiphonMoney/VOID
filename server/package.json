@@ -1,7 +1,7 @@
 {
-  "name": "anonymaus-tee-server",
+  "name": "void-tee-server",
   "version": "1.0.0",
-  "description": "Mock TEE server simulating Intel SGX hardware for AnonyMaus",
+  "description": "Mock TEE server simulating Intel SGX hardware for Void",
   "main": "server.js",
   "type": "module",
   "scripts": {
@@ -12,12 +12,12 @@
     "check-executor-setup": "node scripts/check-executor-setup.js",
     "build-program": "powershell -ExecutionPolicy Bypass -File build-native.ps1",
     "build-program-linux": "bash build-native.sh",
-    "deploy-program": "solana program deploy programs/anonymaus-executor/target/deploy/anonymaus_executor.so"
+    "deploy-program": "solana program deploy programs/anonymaus-executor/target/deploy/void_executor.so"
   },
   "keywords": [
     "tee",
     "sgx",
-    "anonymaus",
+    "void",
     "privacy"
   ],
   "author": "",

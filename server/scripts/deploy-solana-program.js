@@ -31,7 +31,7 @@ function getRpcUrl(network) {
 }
 
 async function main() {
-  console.log('\n🚀 Deploying AnonyMaus Executor Program to Solana...\n');
+  console.log('\n🚀 Deploying Void Executor Program to Solana...\n');
   console.log(`📍 Network: ${network}`);
   
   const rpcUrl = getRpcUrl(network);
@@ -80,7 +80,7 @@ async function main() {
   }
   
   // Check if program binary exists
-  const programPath = path.join(__dirname, '..', 'target', 'deploy', 'anonymaus_executor.so');
+  const programPath = path.join(__dirname, '..', 'target', 'deploy', 'void_executor.so');
   if (!fs.existsSync(programPath)) {
     console.error('❌ Program binary not found. Please build the program first:');
     console.error('   anchor build');
@@ -92,7 +92,7 @@ async function main() {
   console.log(`   Size: ${(programBuffer.length / 1024).toFixed(2)} KB\n`);
   
   // Create program keypair (or use existing)
-  const programKeypairPath = path.join(__dirname, '..', 'target', 'deploy', 'anonymaus_executor-keypair.json');
+  const programKeypairPath = path.join(__dirname, '..', 'target', 'deploy', 'void_executor-keypair.json');
   let programKeypair;
   
   if (fs.existsSync(programKeypairPath)) {
