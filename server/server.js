@@ -534,6 +534,12 @@ app.post('/api/submit-solana-transaction', rateLimitMiddleware, async (req, res)
     const inputMintRaw = swapParams.inputMint;
     const outputMintRaw = swapParams.outputMint;
     
+    // Debug logging for amount extraction
+    log(`🔍 [TEE Server] Amount extraction debug:`, 'info');
+    log(`   swapParams.amountInLamports: ${swapParams.amountInLamports} (type: ${typeof swapParams.amountInLamports})`, 'info');
+    log(`   transactionData.extractedAmountLamports: ${transactionData.extractedAmountLamports} (type: ${typeof transactionData.extractedAmountLamports})`, 'info');
+    log(`   swapParams: ${JSON.stringify(swapParams)}`, 'info');
+    
     const amountInLamports = BigInt(swapParams.amountInLamports || transactionData.extractedAmountLamports || 0);
     const feeBufferLamports = 50000n;
     const fundAmountLamports = amountInLamports + feeBufferLamports;
@@ -541,11 +547,14 @@ app.post('/api/submit-solana-transaction', rateLimitMiddleware, async (req, res)
       ? swapParams.slippage
       : parseFloat(intent.limits?.maxSlippage || '0.01');
 
+    log(`🔍 [TEE Server] Calculated amountInLamports: ${amountInLamports.toString()}`, 'info');
+
     if (!inputMintRaw || !outputMintRaw) {
       throw new Error('Missing swap params (inputMint/outputMint)');
     }
     if (amountInLamports <= 0n) {
-      throw new Error('Missing or invalid swap amount');
+      log(`❌ [TEE Server] Invalid amount: ${amountInLamports.toString()}, swapParams: ${JSON.stringify(swapParams)}, extractedAmountLamports: ${transactionData.extractedAmountLamports}`, 'error');
+      throw new Error(`Missing or invalid swap amount. Got: ${amountInLamports.toString()}, swapParams.amountInLamports: ${swapParams.amountInLamports}, transactionData.extractedAmountLamports: ${transactionData.extractedAmountLamports}`);
     }
 
 
@@ -602,76 +611,87 @@ app.post('/api/submit-solana-transaction', rateLimitMiddleware, async (req, res)
     // Hybrid flow: PER for custody/auth, but swaps execute on base layer
     // This avoids PER delegation issues with Raydium pools
     log('🔄 Executing swap on base layer (L1) - hybrid flow', 'info');
-    const swapResult = await executeSwap({
-      connection,
-      executionKeypair,
-      mintIn,
-      mintOut,
-      amountIn: amountInLamports,
-      slippage,
-      poolId: swapParams.poolId,
-      userPubkey,
-      transactionData,
-      usePER: false, // Always execute swaps on L1 (base layer), not PER
-    });
-
-    // 3) Transfer output to user
-    await transferSwapOutput({
-      connection,
-      executionKeypair,
-      mintOut,
-      outAta: swapResult.outAta,
-      userPubkey,
-    });
-
-    // Use swap signature for response
-    const swapSignature = swapResult.signature;
-    
-    // Store processed intent as submitted immediately
-    teeState.processedIntents.set(intent.intentHash, {
-      intent,
-      executionPlan,
-      processedAt: Date.now(),
-      chain: 'solana',
-      signature: swapSignature,
-      status: 'submitted'
-    });
-
-    // Respond immediately with signature to avoid dApp timeouts
-    const explorerUrl = getExplorerUrl(swapSignature, rpcUrl);
-    res.json({
-      success: true,
-      signature: swapSignature,
-      explorerUrl,
-      status: 'submitted',
-      timestamp: Date.now()
-    });
-
-    // Note: Confirmation is already handled in swap-executor.js
-    // This async confirmation is just for updating state, not blocking
-    waitForTransactionConfirmation(swapSignature, rpcUrl, log, 60000)
-      .then((confirmation) => {
-        if (confirmation?.err) {
-          log(`❌ Transaction failed (async check): ${JSON.stringify(confirmation.err)}`, 'error');
-          return;
-        }
-        teeState.processedIntents.set(intent.intentHash, {
-          intent,
-          executionPlan,
-          processedAt: Date.now(),
-          chain: 'solana',
-          signature: swapSignature,
-          status: 'executed'
-        });
-        log(`✅ Transaction confirmed (async check): ${swapSignature}`, 'success');
-      })
-      .catch((confirmError) => {
-        // Don't log as error - confirmation in swap-executor.js already handled it
-        log(`ℹ️ Async confirmation check completed: ${confirmError.message}`, 'info');
+    log(`🔍 [TEE Server] Swap params: amountIn=${amountInLamports.toString()}, mintIn=${mintIn.toString()}, mintOut=${mintOut.toString()}, slippage=${slippage}`, 'info');
+    try {
+      const swapResult = await executeSwap({
+        connection,
+        executionKeypair,
+        mintIn,
+        mintOut,
+        amountIn: amountInLamports,
+        slippage,
+        poolId: swapParams.poolId,
+        userPubkey,
+        transactionData,
+        usePER: false, // Always execute swaps on L1 (base layer), not PER
       });
+
+      // 3) Transfer output to user
+      await transferSwapOutput({
+        connection,
+        executionKeypair,
+        mintOut,
+        outAta: swapResult.outAta,
+        userPubkey,
+      });
+
+      // Use swap signature for response
+      const swapSignature = swapResult.signature;
+    
+      // Store processed intent as submitted immediately
+      teeState.processedIntents.set(intent.intentHash, {
+        intent,
+        executionPlan,
+        processedAt: Date.now(),
+        chain: 'solana',
+        signature: swapSignature,
+        status: 'submitted'
+      });
+
+      // Respond immediately with signature to avoid dApp timeouts
+      const explorerUrl = getExplorerUrl(swapSignature, rpcUrl);
+      res.json({
+        success: true,
+        signature: swapSignature,
+        explorerUrl,
+        status: 'submitted',
+        timestamp: Date.now()
+      });
+
+      // Note: Confirmation is already handled in swap-executor.js
+      // This async confirmation is just for updating state, not blocking
+      waitForTransactionConfirmation(swapSignature, rpcUrl, log, 60000)
+        .then((confirmation) => {
+          if (confirmation?.err) {
+            log(`❌ Transaction failed (async check): ${JSON.stringify(confirmation.err)}`, 'error');
+            return;
+          }
+          teeState.processedIntents.set(intent.intentHash, {
+            intent,
+            executionPlan,
+            processedAt: Date.now(),
+            chain: 'solana',
+            signature: swapSignature,
+            status: 'executed'
+          });
+          log(`✅ Transaction confirmed (async check): ${swapSignature}`, 'success');
+        })
+        .catch((confirmError) => {
+          // Don't log as error - confirmation in swap-executor.js already handled it
+          log(`ℹ️ Async confirmation check completed: ${confirmError.message}`, 'info');
+        });
+    } catch (swapError) {
+      log(`❌ [TEE Server] Swap execution error: ${swapError.message}`, 'error');
+      log(`❌ [TEE Server] Error stack: ${swapError.stack}`, 'error');
+      if (swapError.message && swapError.message.includes('53 bits')) {
+        log(`❌ [TEE Server] Number overflow error detected. This usually happens when Raydium SDK processes large pool reserves.`, 'error');
+      }
+      throw swapError;
+    }
     
   } catch (error) {
-    log(`Transaction submission failed: ${error.message}`, 'error');
+    log(`❌ [TEE Server] Transaction submission failed: ${error.message}`, 'error');
+    log(`❌ [TEE Server] Error stack: ${error.stack}`, 'error');
     res.status(500).json({
       error: error.message,
       success: false

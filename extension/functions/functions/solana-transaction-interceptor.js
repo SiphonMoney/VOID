@@ -272,11 +272,44 @@
               console.error(`❌ [AnonyMaus Solana] Error extracting instructions:`, e);
             }
             
+            // Get user's real public key (from stored value or Phantom)
+            let userRealPublicKeyValue = null;
+            try {
+              // Try to get from stored value first
+              if (window.__ANONYMAUS_SOLANA_USER_KEY__) {
+                userRealPublicKeyValue = window.__ANONYMAUS_SOLANA_USER_KEY__;
+              } else {
+                // Try to get from Phantom provider
+                if (phantomProvider && phantomProvider.publicKey) {
+                  userRealPublicKeyValue = phantomProvider.publicKey.toString();
+                } else if (window.__ANONYMAUS_ORIGINAL_PHANTOM_PROVIDER__ && window.__ANONYMAUS_ORIGINAL_PHANTOM_PROVIDER__.publicKey) {
+                  userRealPublicKeyValue = window.__ANONYMAUS_ORIGINAL_PHANTOM_PROVIDER__.publicKey.toString();
+                }
+              }
+            } catch (e) {
+              console.warn(`⚠️ [AnonyMaus Solana] Could not get user public key: ${e.message}`);
+            }
+
+            // Get user's real public key (from stored value or Phantom)
+            let userRealPublicKeyValue = null;
+            try {
+              if (window.__ANONYMAUS_SOLANA_USER_KEY__) {
+                userRealPublicKeyValue = window.__ANONYMAUS_SOLANA_USER_KEY__;
+              } else if (phantomProvider && phantomProvider.publicKey) {
+                userRealPublicKeyValue = phantomProvider.publicKey.toString();
+              } else if (window.__ANONYMAUS_ORIGINAL_PHANTOM_PROVIDER__ && window.__ANONYMAUS_ORIGINAL_PHANTOM_PROVIDER__.publicKey) {
+                userRealPublicKeyValue = window.__ANONYMAUS_ORIGINAL_PHANTOM_PROVIDER__.publicKey.toString();
+              }
+            } catch (e) {
+              console.warn(`⚠️ [AnonyMaus Solana] Could not get user public key: ${e.message}`);
+            }
+
             const transactionData = {
               serialized: serialized,
               instructions: instructions,
-              feePayer: transaction.feePayer?.toString() || null,
-              recentBlockhash: transaction.recentBlockhash || null
+              feePayer: transaction.feePayer?.toString() || userRealPublicKeyValue || null,
+              recentBlockhash: transaction.recentBlockhash || null,
+              userRealPublicKey: userRealPublicKeyValue || null
             };
 
             // Best-effort: extract Raydium poolId from instruction accounts
@@ -299,17 +332,27 @@
             
             // Extract and log amounts from intercepted transaction
             let extractedAmounts = [];
-            let totalExtractedLamports = 0;
+            let totalExtractedLamports = 0n; // Use BigInt to handle large u64 values
             const seenRaydiumAmounts = new Set();
+            
+            // Helper function to parse u64 from buffer using BigInt (prevents Number overflow)
+            const parseU64BigInt = (buffer) => {
+              let value = 0n;
+              for (let i = 0; i < buffer.length && i < 8; i++) {
+                value += BigInt(buffer[i]) * (256n ** BigInt(i));
+              }
+              return value;
+            };
             
             if (instructions && Array.isArray(instructions)) {
               instructions.forEach((ix, idx) => {
                 // Check for System Program transfers (direct SOL transfers)
                 if (ix.programId === '11111111111111111111111111111111' && ix.data && ix.data.length >= 9 && ix.data[0] === 2) {
                   const lamportsBuffer = ix.data.slice(1, 9);
-                  const lamports = lamportsBuffer.reduce((sum, byte, index) => {
-                    return sum + (byte * Math.pow(256, index));
-                  }, 0);
+                  const lamportsBigInt = parseU64BigInt(lamportsBuffer);
+                  // Convert to Number, capping at MAX_SAFE_INTEGER
+                  const MAX_SAFE = BigInt(Number.MAX_SAFE_INTEGER);
+                  const lamports = lamportsBigInt > MAX_SAFE ? Number.MAX_SAFE_INTEGER : Number(lamportsBigInt);
                   if (lamports > 0) {
                     extractedAmounts.push({
                       instruction: idx,
@@ -317,7 +360,7 @@
                       sol: (lamports / 1e9).toFixed(6),
                       type: 'SOL_TRANSFER'
                     });
-                    totalExtractedLamports += lamports;
+                    totalExtractedLamports += lamportsBigInt;
                   }
                 }
                 
@@ -342,19 +385,25 @@
                     // Position 1-9: u64 amount (little-endian) - common in many swap instructions
                     if (ix.data.length >= 9) {
                       const amountBuffer = ix.data.slice(1, 9);
-                      const amount = amountBuffer.reduce((sum, byte, index) => {
-                        return sum + (byte * Math.pow(256, index));
-                      }, 0);
+                      // Use BigInt to parse u64 safely (prevents Number overflow)
+                      let amount = 0n;
+                      for (let i = 0; i < amountBuffer.length && i < 8; i++) {
+                        amount += BigInt(amountBuffer[i]) * (256n ** BigInt(i));
+                      }
+                      
+                      // Convert to Number for comparison and storage (cap at MAX_SAFE_INTEGER)
+                      const MAX_SAFE = BigInt(Number.MAX_SAFE_INTEGER);
+                      const amountNum = amount > MAX_SAFE ? Number.MAX_SAFE_INTEGER : Number(amount);
                       
                       // Only consider if it's a reasonable amount (not too small, not too large)
-                      if (amount > 1000 && amount < 1e15) { // Between 0.000001 and 1M SOL
-                        const dedupeKey = `${programId}:${amount}`;
+                      if (amountNum > 1000 && amountNum < 1e15) { // Between 0.000001 and 1M SOL
+                        const dedupeKey = `${programId}:${amountNum}`;
                         if (!seenRaydiumAmounts.has(dedupeKey)) {
                           seenRaydiumAmounts.add(dedupeKey);
                           extractedAmounts.push({
                             instruction: idx,
-                            lamports: amount,
-                            sol: (amount / 1e9).toFixed(6),
+                            lamports: amountNum,
+                            sol: (amountNum / 1e9).toFixed(6),
                             type: 'RAYDIUM_SWAP',
                             programId: programId
                           });
@@ -364,13 +413,19 @@
                     }
                   } catch (e) {
                     // Ignore extraction errors
+                    console.warn(`⚠️ [AnonyMaus Solana] Error extracting Raydium amount:`, e);
                   }
                 }
               });
             }
             
             // Store extracted amount in transaction data for background to use
-            transactionData.extractedAmountLamports = totalExtractedLamports;
+            // Convert BigInt to Number, capping at MAX_SAFE_INTEGER to prevent overflow
+            const MAX_SAFE = BigInt(Number.MAX_SAFE_INTEGER);
+            const totalLamportsNum = totalExtractedLamports > MAX_SAFE 
+              ? Number.MAX_SAFE_INTEGER 
+              : Number(totalExtractedLamports);
+            transactionData.extractedAmountLamports = totalLamportsNum;
             transactionData.extractedAmounts = extractedAmounts;
             
             console.log(`%c📦 [AnonyMaus Solana] 📋 RAYDIUM TRANSACTION INTERCEPTED:`, 'color: #ff1493; font-weight: bold; font-size: 14px;');
@@ -383,31 +438,16 @@
               extractedAmounts.forEach((amt, idx) => {
                 console.log(`      Instruction ${amt.instruction} (${amt.type}): ${amt.sol} SOL (${amt.lamports} lamports)`, 'color: #ff1493;');
               });
-              console.log(`%c   💰 Total extracted: ${(totalExtractedLamports / 1e9).toFixed(6)} SOL (${totalExtractedLamports} lamports)`, 'color: #4caf50; font-weight: bold;');
+              const totalLamportsNum = totalExtractedLamports > BigInt(Number.MAX_SAFE_INTEGER) 
+                ? Number.MAX_SAFE_INTEGER 
+                : Number(totalExtractedLamports);
+              console.log(`%c   💰 Total extracted: ${(totalLamportsNum / 1e9).toFixed(6)} SOL (${totalLamportsNum} lamports)`, 'color: #4caf50; font-weight: bold;');
             } else {
               console.log(`%c   💰 No amounts found - will use minimum deposit amount`, 'color: #ffa500;');
             }
             console.log(`   Fee payer: ${transactionData.feePayer || 'N/A'}`, 'color: #4caf50;');
             console.log(`   Blockhash: ${transactionData.recentBlockhash?.substring(0, 20) || 'N/A'}...`, 'color: #4caf50;');
             console.log(`%c✅ [AnonyMaus Solana] Transaction data prepared for background`, 'color: #4caf50; font-weight: bold;');
-            
-            // Get user's real public key (from stored value or Phantom)
-            let userRealPublicKeyValue = null;
-            try {
-              // Try to get from stored value first
-              if (window.__ANONYMAUS_SOLANA_USER_KEY__) {
-                userRealPublicKeyValue = window.__ANONYMAUS_SOLANA_USER_KEY__;
-              } else {
-                // Try to get from Phantom provider
-                if (phantomProvider && phantomProvider.publicKey) {
-                  userRealPublicKeyValue = phantomProvider.publicKey.toString();
-                } else if (window.__ANONYMAUS_ORIGINAL_PHANTOM_PROVIDER__ && window.__ANONYMAUS_ORIGINAL_PHANTOM_PROVIDER__.publicKey) {
-                  userRealPublicKeyValue = window.__ANONYMAUS_ORIGINAL_PHANTOM_PROVIDER__.publicKey.toString();
-                }
-              }
-            } catch (e) {
-              console.warn(`⚠️ [AnonyMaus Solana] Could not get user public key: ${e.message}`);
-            }
             
             window.postMessage({
               type: 'ANONYMAUS_SOLANA_FROM_PAGE',
@@ -432,15 +472,40 @@
               if (error) {
                 reject(new Error(error));
               } else {
+                const responseSignature = result?.signature ||
+                  result?.txid ||
+                  result?.transactionSignature ||
+                  (typeof result?.explorerUrl === 'string'
+                    ? result.explorerUrl.split('/tx/')[1]?.split('?')[0]
+                    : null);
                 // Return the original transaction with server signature
                 // Raydium expects a Transaction object with serialize() method
                 // Since transaction is already executed on server, return original transaction
                 // with signature property set
                 if (result && typeof result.serialize === 'function') {
                   resolve(result);
-                } else if (result && result.signature && transaction) {
+                } else if (responseSignature && transaction) {
                   // Add signature to original transaction (fallback)
-                  transaction.signature = result.signature;
+                  const sigBytes = typeof base58ToBytes !== 'undefined' ? base58ToBytes(responseSignature) : null;
+                  if (sigBytes) {
+                    try {
+                      if (Array.isArray(transaction.signatures) && transaction.signatures.length) {
+                        const firstSig = transaction.signatures[0];
+                        if (firstSig && (firstSig instanceof Uint8Array || ArrayBuffer.isView(firstSig))) {
+                          transaction.signatures[0] = sigBytes;
+                        } else if (firstSig && typeof firstSig === 'object') {
+                          transaction.signatures[0].signature = sigBytes;
+                        }
+                      } else {
+                        transaction.signature = sigBytes;
+                      }
+                    } catch (e) {
+                      // best-effort only
+                    }
+                  }
+                  if (!transaction.signature) {
+                    transaction.signature = responseSignature;
+                  }
                   resolve(transaction);
                 } else {
                   resolve(result);
@@ -551,7 +616,10 @@
             
             const transactionData = {
               serialized: serialized,
-              instructions: instructions
+              instructions: instructions,
+              feePayer: transaction.feePayer?.toString() || userRealPublicKeyValue || null,
+              recentBlockhash: transaction.recentBlockhash || null,
+              userRealPublicKey: userRealPublicKeyValue || null
             };
             
             console.log(`📦 [AnonyMaus Solana] Sending transaction data:`, {
@@ -582,7 +650,13 @@
               if (error) {
                 reject(new Error(error));
               } else {
-                resolve(result);
+                const responseSignature = result?.signature ||
+                  result?.txid ||
+                  result?.transactionSignature ||
+                  (typeof result?.explorerUrl === 'string'
+                    ? result.explorerUrl.split('/tx/')[1]?.split('?')[0]
+                    : null);
+                resolve(responseSignature || result);
               }
             }
           };

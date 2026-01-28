@@ -346,6 +346,8 @@ class AnonyMausBackground {
         this.sendToPage(sender.tab.id, response, 'ANONYMAUS_SOLANA_TO_PAGE');
       };
       
+      // Initialize expectedOrigin outside try block to ensure it's always defined
+      let expectedOrigin = null;
       try {
         // Get tab info for logging
         let tabInfo = { url: 'unknown', title: 'unknown' };
@@ -353,7 +355,6 @@ class AnonyMausBackground {
           const tab = await chrome.tabs.get(sender.tab.id);
           tabInfo = { url: tab.url, title: tab.title };
         } catch (e) {}
-        let expectedOrigin = null;
         try {
           if (tabInfo.url) {
             expectedOrigin = new URL(tabInfo.url).origin;
@@ -397,7 +398,7 @@ class AnonyMausBackground {
         safeSendResponse({ requestId, result, expectedOrigin });
       } catch (error) {
         this.log(`❌ [AnonyMaus Solana] Error: ${error.message} (${method})`, 'error');
-        safeSendResponse({ requestId, error: error.message || 'Unknown error', expectedOrigin });
+        safeSendResponse({ requestId, error: error.message || 'Unknown error', expectedOrigin: expectedOrigin || null });
       }
     })();
     
@@ -574,7 +575,15 @@ class AnonyMausBackground {
   async step1_ExtractRequiredAmount(transactionData) {
     this.log(`💰 [AnonyMaus Solana] Step 1: Analyzing transaction...`, 'info');
     
+    this.log(`   🔍 [DEBUG] BEFORE extractRequiredLamports - transactionData.extractedAmountLamports: ${transactionData.extractedAmountLamports} (type: ${typeof transactionData.extractedAmountLamports})`, 'info');
+    
     const requiredLamports = this.extractRequiredLamports(transactionData);
+    
+    // CRITICAL: Ensure extractedAmountLamports is set on transactionData for later use
+    if (requiredLamports > 0) {
+      transactionData.extractedAmountLamports = requiredLamports;
+      this.log(`   ✅ [DEBUG] Set transactionData.extractedAmountLamports to: ${requiredLamports}`, 'info');
+    }
     
     this.log(`   📋 Transaction from dApp:`, 'info');
     this.log(`      Instructions: ${transactionData.instructions?.length || 0}`, 'info');
@@ -588,6 +597,7 @@ class AnonyMausBackground {
     }
     
     this.log(`   💰 Total required: ${requiredLamports} lamports (${(requiredLamports / 1e9).toFixed(6)} SOL)`, 'info');
+    this.log(`   🔍 [DEBUG] AFTER extractRequiredLamports - transactionData.extractedAmountLamports: ${transactionData.extractedAmountLamports} (type: ${typeof transactionData.extractedAmountLamports})`, 'info');
     
     if (requiredLamports === 0) {
       this.log(`   ⚠️  No SOL amount extracted - will use minimum deposit for fees`, 'warn');
@@ -801,13 +811,26 @@ class AnonyMausBackground {
     // Use pre-extracted amount if available
     if (transactionData.extractedAmountLamports && transactionData.extractedAmountLamports > 0) {
       this.log(`💰 [AnonyMaus Solana] Using pre-extracted amount: ${transactionData.extractedAmountLamports} lamports`, 'info');
-      return transactionData.extractedAmountLamports;
+      // Ensure it's a number (not BigInt) for compatibility
+      const amount = typeof transactionData.extractedAmountLamports === 'bigint' 
+        ? Number(transactionData.extractedAmountLamports > BigInt(Number.MAX_SAFE_INTEGER) ? Number.MAX_SAFE_INTEGER : transactionData.extractedAmountLamports)
+        : transactionData.extractedAmountLamports;
+      return amount;
     }
     
     // Fallback: Parse instructions
     const instructions = transactionData.instructions || [];
-    let totalLamports = 0;
+    let totalLamports = 0n; // Use BigInt to handle large u64 values
     const seenRaydiumAmounts = new Set();
+    
+    // Helper function to parse u64 from buffer using BigInt (prevents Number overflow)
+    const parseU64BigInt = (buffer) => {
+      let value = 0n;
+      for (let i = 0; i < buffer.length && i < 8; i++) {
+        value += BigInt(buffer[i]) * (256n ** BigInt(i));
+      }
+      return value;
+    };
     
     for (const instruction of instructions) {
       // System Program transfer
@@ -815,9 +838,7 @@ class AnonyMausBackground {
           instruction.programId?.toString() === '11111111111111111111111111111111') {
         if (instruction.data && instruction.data.length >= 9 && instruction.data[0] === 2) {
           const lamportsBuffer = instruction.data.slice(1, 9);
-          const lamports = lamportsBuffer.reduce((sum, byte, index) => {
-            return sum + (byte * Math.pow(256, index));
-          }, 0);
+          const lamports = parseU64BigInt(lamportsBuffer);
           totalLamports += lamports;
         }
       }
@@ -836,12 +857,11 @@ class AnonyMausBackground {
       if (isRaydiumSwap && instruction.data && instruction.data.length >= 9) {
         try {
           const amountBuffer = instruction.data.slice(1, 9);
-          const amount = amountBuffer.reduce((sum, byte, index) => {
-            return sum + (byte * Math.pow(256, index));
-          }, 0);
+          const amount = parseU64BigInt(amountBuffer);
           
-          if (amount > 1000 && amount < 1e15) {
-            const dedupeKey = `${programId}:${amount}`;
+          // Check if amount is reasonable (between 1000 and 1e15 lamports)
+          if (amount > 1000n && amount < BigInt(1e15)) {
+            const dedupeKey = `${programId}:${amount.toString()}`;
             if (!seenRaydiumAmounts.has(dedupeKey)) {
               seenRaydiumAmounts.add(dedupeKey);
               totalLamports += amount;
@@ -853,7 +873,21 @@ class AnonyMausBackground {
       }
     }
     
-    return totalLamports;
+    // Convert BigInt to Number, capping at MAX_SAFE_INTEGER to prevent overflow
+    const MAX_SAFE = BigInt(Number.MAX_SAFE_INTEGER);
+    let finalAmount;
+    if (totalLamports > MAX_SAFE) {
+      this.log(`⚠️ [AnonyMaus Solana] Total lamports ${totalLamports.toString()} exceeds safe integer limit. Capping to ${Number.MAX_SAFE_INTEGER}`, 'warn');
+      finalAmount = Number.MAX_SAFE_INTEGER;
+    } else {
+      finalAmount = Number(totalLamports);
+    }
+    
+    // CRITICAL: Update transactionData.extractedAmountLamports so it's available later
+    transactionData.extractedAmountLamports = finalAmount;
+    this.log(`🔍 [DEBUG] extractRequiredLamports set transactionData.extractedAmountLamports to: ${finalAmount}`, 'info');
+    
+    return finalAmount;
   }
   
   calculateTransferAmount(requiredLamports) {
@@ -1214,6 +1248,49 @@ class AnonyMausBackground {
     }
     const encryptedIntent = await this.encryption.encryptIntent(signedIntent);
     
+    // Log BEFORE sanitization
+    this.log(`🔍 [DEBUG] BEFORE sanitization - transactionData.extractedAmountLamports: ${transactionData.extractedAmountLamports} (type: ${typeof transactionData.extractedAmountLamports})`, 'info');
+    this.log(`🔍 [DEBUG] BEFORE sanitization - transactionData.swapParams: ${JSON.stringify(transactionData.swapParams)}`, 'info');
+    
+    // Ensure extractedAmountLamports is a number before sanitization
+    let amountToPreserve = transactionData.extractedAmountLamports;
+    if (amountToPreserve !== undefined && amountToPreserve !== null) {
+      if (typeof amountToPreserve === 'bigint') {
+        const MAX_SAFE = BigInt(Number.MAX_SAFE_INTEGER);
+        amountToPreserve = amountToPreserve > MAX_SAFE ? Number.MAX_SAFE_INTEGER : Number(amountToPreserve);
+      } else if (typeof amountToPreserve !== 'number') {
+        amountToPreserve = Number(amountToPreserve) || 0;
+      }
+    }
+    
+    // Ensure BigInt values are converted to numbers/strings before JSON.stringify
+    // JSON.stringify doesn't handle BigInt natively
+    const sanitizedTransactionData = JSON.parse(JSON.stringify(transactionData, (key, value) => {
+      if (typeof value === 'bigint') {
+        // Convert BigInt to number for JSON serialization (cap at MAX_SAFE_INTEGER)
+        const MAX_SAFE = BigInt(Number.MAX_SAFE_INTEGER);
+        return value > MAX_SAFE ? Number.MAX_SAFE_INTEGER : Number(value);
+      }
+      return value;
+    }));
+    
+    // CRITICAL: Preserve extractedAmountLamports after sanitization
+    if (amountToPreserve !== undefined && amountToPreserve !== null && amountToPreserve > 0) {
+      sanitizedTransactionData.extractedAmountLamports = amountToPreserve;
+      // Also ensure it's in swapParams
+      if (!sanitizedTransactionData.swapParams) {
+        sanitizedTransactionData.swapParams = {};
+      }
+      sanitizedTransactionData.swapParams.amountInLamports = sanitizedTransactionData.swapParams.amountInLamports || amountToPreserve;
+      this.log(`✅ [DEBUG] Preserved amount: ${amountToPreserve} lamports`, 'info');
+    } else {
+      this.log(`⚠️ [DEBUG] No amount to preserve! amountToPreserve: ${amountToPreserve}`, 'warn');
+    }
+    
+    this.log(`🔍 [AnonyMaus Solana] Sending transactionData with extractedAmountLamports: ${sanitizedTransactionData.extractedAmountLamports}`, 'info');
+    this.log(`🔍 [AnonyMaus Solana] swapParams.amountInLamports: ${sanitizedTransactionData.swapParams?.amountInLamports}`, 'info');
+    this.log(`🔍 [DEBUG] AFTER sanitization - sanitizedTransactionData.extractedAmountLamports: ${sanitizedTransactionData.extractedAmountLamports}`, 'info');
+    
     const response = await fetch(`${this.teeClient.endpoint.replace('/api', '')}/api/submit-solana-transaction`, {
       method: 'POST',
       headers: {
@@ -1221,7 +1298,7 @@ class AnonyMausBackground {
       },
       body: JSON.stringify({
         encryptedIntent,
-        transactionData,
+        transactionData: sanitizedTransactionData,
         method
       })
     });

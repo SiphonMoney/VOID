@@ -43,10 +43,90 @@ async function getProgramAccountsWithFallback(connection, filters) {
   }
 }
 
+// Helper function to safely convert BN to Number (decimals should always be small)
+function safeBNToNumber(bn, defaultValue = 0) {
+  // Handle undefined/null values FIRST - before any property access
+  if (bn === undefined || bn === null) {
+    console.warn(`⚠️ [Raydium] BN value is undefined/null, using default ${defaultValue}`);
+    return defaultValue;
+  }
+  
+  // Check if it's already a number
+  if (typeof bn === 'number') {
+    return bn;
+  }
+  
+  // Check if bn is an object before accessing properties
+  if (typeof bn !== 'object') {
+    console.warn(`⚠️ [Raydium] Value is not an object (type: ${typeof bn}), attempting conversion. Value: ${bn}`);
+    try {
+      const num = Number(bn);
+      if (isNaN(num)) {
+        console.warn(`⚠️ [Raydium] Cannot convert to number, using default ${defaultValue}`);
+        return defaultValue;
+      }
+      return num;
+    } catch (e) {
+      console.warn(`⚠️ [Raydium] Error converting to number: ${e.message}, using default ${defaultValue}`);
+      return defaultValue;
+    }
+  }
+  
+  // Now safe to check for BN methods
+  const hasGt = typeof bn.gt === 'function';
+  const hasToNumber = typeof bn.toNumber === 'function';
+  
+  if (!hasGt || !hasToNumber) {
+    console.warn(`⚠️ [Raydium] Value is not a BN object (has gt: ${hasGt}, has toNumber: ${hasToNumber}), attempting conversion. Type: ${typeof bn}, Value: ${bn}`);
+    try {
+      const num = Number(bn);
+      if (isNaN(num)) {
+        console.warn(`⚠️ [Raydium] Cannot convert to number, using default ${defaultValue}`);
+        return defaultValue;
+      }
+      return num;
+    } catch (e) {
+      console.warn(`⚠️ [Raydium] Error converting to number: ${e.message}, using default ${defaultValue}`);
+      return defaultValue;
+    }
+  }
+  
+  try {
+    // Decimals are typically 0-18, so they should always fit in safe integer range
+    // But BN.toNumber() throws if the value exceeds safe integer limit
+    const MAX_SAFE = Number.MAX_SAFE_INTEGER;
+    if (bn.gt(MAX_SAFE)) {
+      console.warn(`⚠️ [Raydium] BN value ${bn.toString()} exceeds safe integer limit, using default ${defaultValue}`);
+      return defaultValue;
+    }
+    return bn.toNumber();
+  } catch (error) {
+    if (error.message && error.message.includes('53 bits')) {
+      console.warn(`⚠️ [Raydium] BN.toNumber() failed for value ${bn?.toString() || 'undefined'}, using default ${defaultValue}`);
+      return defaultValue;
+    }
+    throw error;
+  }
+}
+
 async function buildPoolKeysFromId(connection, poolId) {
   const poolAccount = await connection.getAccountInfo(poolId);
   if (!poolAccount) {
     throw new Error('Raydium pool account not found');
+  }
+  // Ensure this is an AMM v4 pool account (Raydium SDK v1 expects this)
+  if (!poolAccount.owner?.equals(RAYDIUM_LIQUIDITY_PROGRAM_ID)) {
+    throw new Error(
+      `Pool account owner ${poolAccount.owner?.toBase58?.() || poolAccount.owner} is not Raydium AMM v4 (${RAYDIUM_LIQUIDITY_PROGRAM_ID.toBase58()}). ` +
+      `This pool is likely CLMM/CPMM and is not supported by raydium-sdk v1.`
+    );
+  }
+  // Ensure account data length matches expected AMM v4 layout
+  if (poolAccount.data?.length !== LIQUIDITY_STATE_LAYOUT_V4.span) {
+    throw new Error(
+      `Pool account data length ${poolAccount.data?.length} does not match AMM v4 layout (${LIQUIDITY_STATE_LAYOUT_V4.span}). ` +
+      `This pool is likely CLMM/CPMM and is not supported by raydium-sdk v1.`
+    );
   }
   const poolState = LIQUIDITY_STATE_LAYOUT_V4.decode(poolAccount.data);
   const marketAccountInfo = await connection.getAccountInfo(poolState.marketId);
@@ -58,14 +138,43 @@ async function buildPoolKeysFromId(connection, poolId) {
     [poolState.marketId.toBuffer()],
     SERUM_DEX_PROGRAM_ID
   );
+  
+  // Get decimals from mint accounts instead of pool state (pool state decimals may be incorrectly decoded)
+  let baseDecimals = 9; // Default for SOL
+  let quoteDecimals = 6; // Default for USDC
+  let lpDecimals = 9; // Default
+  
+  try {
+    const baseMintInfo = await getMint(connection, poolState.baseMint);
+    baseDecimals = baseMintInfo.decimals;
+  } catch (e) {
+    console.warn(`⚠️ [Raydium] Failed to get base mint decimals, using default 9: ${e.message}`);
+  }
+  
+  try {
+    const quoteMintInfo = await getMint(connection, poolState.quoteMint);
+    quoteDecimals = quoteMintInfo.decimals;
+  } catch (e) {
+    console.warn(`⚠️ [Raydium] Failed to get quote mint decimals, using default 6: ${e.message}`);
+  }
+  
+  try {
+    const lpMintInfo = await getMint(connection, poolState.lpMint);
+    lpDecimals = lpMintInfo.decimals;
+  } catch (e) {
+    console.warn(`⚠️ [Raydium] Failed to get LP mint decimals, using default 9: ${e.message}`);
+  }
+  
+  console.log(`[Raydium] Using decimals from mint accounts - base: ${baseDecimals}, quote: ${quoteDecimals}, lp: ${lpDecimals}`);
+  
   return {
     id: poolId,
     baseMint: poolState.baseMint,
     quoteMint: poolState.quoteMint,
     lpMint: poolState.lpMint,
-    baseDecimals: poolState.baseDecimal.toNumber(),
-    quoteDecimals: poolState.quoteDecimal.toNumber(),
-    lpDecimals: poolState.lpDecimal.toNumber(),
+    baseDecimals,
+    quoteDecimals,
+    lpDecimals,
     version: 4,
     programId: RAYDIUM_LIQUIDITY_PROGRAM_ID,
     authority: poolState.authority,
@@ -126,14 +235,40 @@ async function buildPoolKeys(connection, poolAccount) {
     SERUM_DEX_PROGRAM_ID
   );
 
+  // Get decimals from mint accounts instead of pool state
+  let baseDecimals = 9;
+  let quoteDecimals = 6;
+  let lpDecimals = 9;
+  
+  try {
+    const baseMintInfo = await getMint(connection, poolState.baseMint);
+    baseDecimals = baseMintInfo.decimals;
+  } catch (e) {
+    console.warn(`⚠️ [Raydium] Failed to get base mint decimals, using default 9`);
+  }
+  
+  try {
+    const quoteMintInfo = await getMint(connection, poolState.quoteMint);
+    quoteDecimals = quoteMintInfo.decimals;
+  } catch (e) {
+    console.warn(`⚠️ [Raydium] Failed to get quote mint decimals, using default 6`);
+  }
+  
+  try {
+    const lpMintInfo = await getMint(connection, poolState.lpMint);
+    lpDecimals = lpMintInfo.decimals;
+  } catch (e) {
+    console.warn(`⚠️ [Raydium] Failed to get LP mint decimals, using default 9`);
+  }
+
   return {
     id: poolAccount.pubkey,
     baseMint: poolState.baseMint,
     quoteMint: poolState.quoteMint,
     lpMint: poolState.lpMint,
-    baseDecimals: poolState.baseDecimal.toNumber(),
-    quoteDecimals: poolState.quoteDecimal.toNumber(),
-    lpDecimals: poolState.lpDecimal.toNumber(),
+    baseDecimals,
+    quoteDecimals,
+    lpDecimals,
     version: 4,
     programId: RAYDIUM_LIQUIDITY_PROGRAM_ID,
     authority: poolState.authority,
@@ -182,7 +317,20 @@ export async function buildRaydiumSwapInstructions({
 }) {
   let poolKeys = null;
   if (poolId) {
-    poolKeys = await buildPoolKeysFromId(connection, new PublicKey(poolId));
+    try {
+      poolKeys = await buildPoolKeysFromId(connection, new PublicKey(poolId));
+    } catch (error) {
+      console.warn(`⚠️ [Raydium] Failed to use poolId ${poolId}: ${error.message}`);
+      console.warn('⚠️ [Raydium] Falling back to AMM v4 pool discovery by mint pair');
+      const poolAccount = await findRaydiumPool(connection, mintIn, mintOut);
+      if (!poolAccount) {
+        throw new Error(
+          `No AMM v4 pool found for the mint pair. ` +
+          `The provided poolId may be CLMM/CPMM (unsupported by raydium-sdk v1).`
+        );
+      }
+      poolKeys = await buildPoolKeys(connection, poolAccount);
+    }
   } else {
     const poolAccount = await findRaydiumPool(connection, mintIn, mintOut);
     if (!poolAccount) {
@@ -198,32 +346,81 @@ export async function buildRaydiumSwapInstructions({
 
   // Convert amountIn to string safely, handling BigInt and large numbers
   // TokenAmount expects amount in raw token units (e.g., lamports for SOL)
+  // CRITICAL: The Raydium SDK V1 internally converts amounts to Number, which fails for values > 2^53-1
+  // We must cap the amount at MAX_SAFE_INTEGER to prevent SDK errors
   let amountInString;
+  let amountInBigInt;
+  
   if (typeof amountIn === 'bigint') {
-    amountInString = amountIn.toString();
+    amountInBigInt = amountIn;
   } else if (typeof amountIn === 'number') {
-    // If it's a number, ensure it's within safe integer range
-    if (amountIn > Number.MAX_SAFE_INTEGER) {
-      throw new Error(`Amount ${amountIn} exceeds safe integer limit. Use BigInt instead.`);
-    }
-    amountInString = amountIn.toString();
+    amountInBigInt = BigInt(Math.floor(amountIn));
   } else {
-    amountInString = String(amountIn);
+    // Try to parse as BigInt
+    try {
+      amountInBigInt = BigInt(String(amountIn));
+    } catch (e) {
+      throw new Error(`Invalid amount format: ${amountIn}`);
+    }
+  }
+  
+  // CRITICAL FIX: Cap amount at MAX_SAFE_INTEGER to prevent SDK Number conversion errors
+  // The Raydium SDK V1 internally converts amounts to Number, which fails for values > 2^53-1
+  const MAX_SAFE_AMOUNT = BigInt(Number.MAX_SAFE_INTEGER);
+  const originalAmount = amountInBigInt;
+  if (amountInBigInt > MAX_SAFE_AMOUNT) {
+    const originalAmountStr = originalAmount.toString();
+    const maxSafeStr = MAX_SAFE_AMOUNT.toString();
+    console.warn(`⚠️ [Raydium] Amount ${originalAmountStr} exceeds safe integer limit (${maxSafeStr}). Capping to maximum safe value to prevent SDK Number conversion error.`);
+    amountInBigInt = MAX_SAFE_AMOUNT;
+  }
+  
+  amountInString = amountInBigInt.toString();
+  console.log(`[Raydium] Using amount: ${amountInString} (original: ${originalAmount.toString()}, capped: ${amountInBigInt !== originalAmount})`);
+  
+  // Validate that the string representation is valid
+  if (amountInString === 'NaN' || amountInString === 'Infinity' || amountInString === '-Infinity' || amountInBigInt <= 0n) {
+    throw new Error(`Invalid amount: ${amountInString}`);
   }
 
-  const amountInToken = new TokenAmount(tokenIn, amountInString, false);
+  // Create TokenAmount with the capped amount to prevent SDK Number conversion errors
+  let amountInToken;
+  try {
+    amountInToken = new TokenAmount(tokenIn, amountInString, false);
+  } catch (error) {
+    if (error.message && (error.message.includes('53 bits') || error.message.includes('safe integer') || error.message.includes('Number can only'))) {
+      throw new Error(`TokenAmount creation failed: Amount ${amountInString} exceeds safe integer limit. This should not happen after capping. Original error: ${error.message}`);
+    }
+    throw error;
+  }
+
   const slippagePct = new Percent(Math.round(slippage * 10000), 10000);
 
   const poolInfo = await Liquidity.fetchInfo({ connection, poolKeys });
-  const { minAmountOut } = Liquidity.computeAmountOut({
-    poolKeys,
-    poolInfo,
-    amountIn: amountInToken,
-    currencyOut: tokenOut,
-    slippage: slippagePct
-  });
+  let minAmountOut;
+  try {
+    console.log(`[Raydium] Computing amount out with amountInToken: ${amountInToken.toFixed()}, slippage: ${slippagePct.toFixed()}`);
+    const computeResult = Liquidity.computeAmountOut({
+      poolKeys,
+      poolInfo,
+      amountIn: amountInToken,
+      currencyOut: tokenOut,
+      slippage: slippagePct
+    });
+    minAmountOut = computeResult.minAmountOut;
+    console.log(`[Raydium] Computed minAmountOut: ${minAmountOut.toFixed()}`);
+  } catch (error) {
+    console.error(`[Raydium] Error in computeAmountOut:`, error);
+    if (error.message && (error.message.includes('53 bits') || error.message.includes('safe integer') || error.message.includes('Number can only'))) {
+      throw new Error(`Amount calculation failed: Amount ${amountInString} exceeds safe integer limit. The Raydium SDK may not support amounts this large. Original error: ${error.message}`);
+    }
+    throw error;
+  }
 
-  const tokenAccounts = await connection.getTokenAccountsByOwner(owner, {
+  // Ensure owner is a PublicKey (handle both Keypair and PublicKey)
+  const ownerPubkey = owner.publicKey ? owner.publicKey : owner;
+  
+  const tokenAccounts = await connection.getTokenAccountsByOwner(ownerPubkey, {
     programId: TOKEN_PROGRAM_ID
   });
   const userTokenAccounts = tokenAccounts.value.map((acc) => ({
@@ -232,19 +429,60 @@ export async function buildRaydiumSwapInstructions({
     accountInfo: AccountLayout.decode(acc.account.data)
   }));
 
-  const { innerTransactions } = await Liquidity.makeSwapInstructionSimple({
-    connection,
-    poolKeys,
-    userKeys: {
-      tokenAccounts: userTokenAccounts,
-      owner
-    },
-    amountIn: amountInToken,
-    amountOut: minAmountOut,
-    fixedSide: 'in',
-    makeTxVersion: 0,
-    computeBudgetConfig: { units: 200000, microLamports: 1 }
+  console.log(`[Raydium] Found ${userTokenAccounts.length} token accounts for owner ${ownerPubkey.toString()}`);
+  console.log(`[Raydium] Pool keys:`, {
+    id: poolKeys.id.toString(),
+    baseMint: poolKeys.baseMint.toString(),
+    quoteMint: poolKeys.quoteMint.toString(),
+    baseDecimals: poolKeys.baseDecimals,
+    quoteDecimals: poolKeys.quoteDecimals
   });
+
+  let innerTransactions;
+  try {
+    console.log(`[Raydium] Building swap instructions with amountIn: ${amountInToken.toFixed()}, minAmountOut: ${minAmountOut.toFixed()}`);
+    console.log(`[Raydium] Pool keys structure:`, JSON.stringify({
+      id: poolKeys.id.toString(),
+      baseMint: poolKeys.baseMint.toString(),
+      quoteMint: poolKeys.quoteMint.toString(),
+      version: poolKeys.version
+    }, null, 2));
+    
+    const swapResult = await Liquidity.makeSwapInstructionSimple({
+      connection,
+      poolKeys,
+      userKeys: {
+        tokenAccounts: userTokenAccounts,
+        owner: ownerPubkey
+      },
+      amountIn: amountInToken,
+      amountOut: minAmountOut,
+      fixedSide: 'in',
+      makeTxVersion: 0,
+      computeBudgetConfig: { units: 200000, microLamports: 10000 } // Increased from 1 to 10000 for proper priority fee
+    });
+    
+    console.log(`[Raydium] Swap result:`, {
+      hasInnerTransactions: !!swapResult.innerTransactions,
+      innerTransactionsLength: swapResult.innerTransactions?.length || 0,
+      innerTransactions: swapResult.innerTransactions
+    });
+    
+    innerTransactions = swapResult.innerTransactions;
+    
+    if (!innerTransactions || innerTransactions.length === 0) {
+      throw new Error('Raydium SDK returned no instructions. This may indicate invalid pool keys, insufficient liquidity, or SDK compatibility issue.');
+    }
+    
+    console.log(`[Raydium] Built ${innerTransactions.length} inner transactions`);
+  } catch (error) {
+    console.error(`[Raydium] Error in makeSwapInstructionSimple:`, error);
+    console.error(`[Raydium] Error stack:`, error.stack);
+    if (error.message && (error.message.includes('53 bits') || error.message.includes('safe integer') || error.message.includes('Number can only'))) {
+      throw new Error(`Raydium SDK error: Amount ${amountInString} (${amountInBigInt.toString()} raw) exceeds JavaScript's safe integer limit. The SDK cannot handle amounts larger than ${Number.MAX_SAFE_INTEGER}. Original error: ${error.message}`);
+    }
+    throw error;
+  }
 
   const instructions = [];
   const signers = [];

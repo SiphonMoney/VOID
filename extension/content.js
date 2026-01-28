@@ -15,16 +15,12 @@
   // STEP 2: SCRIPT INJECTION
   // ============================================================================
   // Inject scripts in order:
-  // 1. Porto blocker (MUST run first to block Porto before it intercepts)
-  // 2. Solana transaction interceptor (intercepts Phantom transactions)
-  // 3. Phantom signer (handles Solana signing in page context)
+  // 1. Solana transaction interceptor (intercepts Phantom transactions)
+  // 2. Phantom signer (handles Solana signing in page context)
   // NOTE: Wallet injector is NOT injected - we don't want VØID to appear as a wallet option
   // Users connect with their existing wallets (Phantom, etc.), and we intercept transactions
 
-  // Step 2.1: Inject Porto blocker FIRST
-  injectPortoBlocker();
-  
-  // Step 2.2: Inject interception scripts with delays to ensure proper order
+  // Step 2: Inject interception scripts with delays to ensure proper order
   setTimeout(() => {
     injectSolanaTransactionInterceptor();
     
@@ -36,38 +32,7 @@
   console.log('%c📍 [VØID] Content script loaded on:', 'color: #2196F3; font-weight: bold;', window.location.href);
 
   // ============================================================================
-  // STEP 2.1: PORTO BLOCKER INJECTION
-  // ============================================================================
-  function injectPortoBlocker() {
-    try {
-      const script = document.createElement('script');
-      script.src = chrome.runtime.getURL('functions/porto-blocker.js');
-      script.onload = function() {
-        console.log('%c✅ [VØID] Porto blocker loaded', 'color: #4caf50; font-weight: bold;');
-        this.remove();
-      };
-      script.onerror = function() {
-        console.error('%c❌ [VØID] Failed to load Porto blocker', 'color: #ff1493; font-weight: bold;');
-      };
-      
-      const target = document.head || document.documentElement;
-      if (target) {
-        target.insertBefore(script, target.firstChild);
-      } else {
-        setTimeout(() => {
-          const retryTarget = document.head || document.documentElement;
-          if (retryTarget) {
-            retryTarget.insertBefore(script, retryTarget.firstChild);
-          }
-        }, 0);
-      }
-    } catch (error) {
-      console.error('%c❌ [VØID] Error injecting Porto blocker:', 'color: #ff1493; font-weight: bold;', error);
-    }
-  }
-
-  // ============================================================================
-  // STEP 2.2: SOLANA TRANSACTION INTERCEPTOR INJECTION
+  // STEP 2.1: SOLANA TRANSACTION INTERCEPTOR INJECTION
   // ============================================================================
   // NOTE: Wallet injector is intentionally NOT injected
   // We only intercept transactions from existing wallets, we don't appear as a wallet option
@@ -100,7 +65,7 @@
   }
 
   // ============================================================================
-  // STEP 2.3: PHANTOM SIGNER INJECTION
+  // STEP 2.2: PHANTOM SIGNER INJECTION
   // ============================================================================
   function injectPhantomSigner() {
     try {

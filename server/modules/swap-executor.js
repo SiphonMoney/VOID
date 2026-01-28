@@ -10,7 +10,8 @@ import {
   createCloseAccountInstruction,
   createSyncNativeInstruction,
 } from '@solana/spl-token';
-import { buildRaydiumSwapInstructions, prepareExecutorAccounts } from './raydium.js';
+import { prepareExecutorAccounts } from './raydium.js';
+import { buildRaydiumSwapInstructionsV2 } from './raydium-v2.js';
 import { log } from './logger.js';
 import { executeOnPER, getPERConnection } from './magicblock.js';
 
@@ -118,10 +119,9 @@ export async function executeSwap({
   // 3. Build swap instructions
   let swapInstructions, signers;
   try {
-    const result = await buildRaydiumSwapInstructions({
+    const result = await buildRaydiumSwapInstructionsV2({
       connection,
       owner: executionKeypair, // Pass Keypair
-      payer: executionKeypair.publicKey,
       mintIn,
       mintOut,
       amountIn,
@@ -140,10 +140,9 @@ export async function executeSwap({
     if (isRoutedSwap) {
       log(`⚠️ Routed swap detected - retrying with SDK using poolId: ${poolId}`, 'warn');
       try {
-        const result = await buildRaydiumSwapInstructions({
+        const result = await buildRaydiumSwapInstructionsV2({
           connection,
           owner: executionKeypair,
-          payer: executionKeypair.publicKey,
           mintIn,
           mintOut,
           amountIn,
@@ -240,12 +239,21 @@ export async function executeSwap({
     log(`🔗 Explorer: https://explorer.solana.com/tx/${swapSignature}?cluster=devnet`, 'info');
   } else {
     // Execute on base layer
-    swapSignature = await connection.sendRawTransaction(swapTx.serialize(), {
-      skipPreflight: false,
-      maxRetries: 3,
-    });
-    log(`✅ Swap transaction submitted: ${swapSignature}`, 'success');
-    log(`🔗 Explorer: https://explorer.solana.com/tx/${swapSignature}?cluster=devnet`, 'info');
+    try {
+      // Serialize transaction - this may fail if SDK built instructions with numbers > MAX_SAFE_INTEGER
+      const serializedTx = swapTx.serialize();
+      swapSignature = await connection.sendRawTransaction(serializedTx, {
+        skipPreflight: false,
+        maxRetries: 3,
+      });
+      log(`✅ Swap transaction submitted: ${swapSignature}`, 'success');
+      log(`🔗 Explorer: https://explorer.solana.com/tx/${swapSignature}?cluster=devnet`, 'info');
+    } catch (serializeError) {
+      if (serializeError.message && (serializeError.message.includes('53 bits') || serializeError.message.includes('safe integer') || serializeError.message.includes('Number can only'))) {
+        throw new Error(`Transaction serialization failed: The Raydium SDK built instructions with amounts exceeding JavaScript's safe integer limit (${Number.MAX_SAFE_INTEGER}). This usually happens with very large swap amounts. Original error: ${serializeError.message}`);
+      }
+      throw serializeError;
+    }
   }
 
   // 7. Wait for confirmation with robust polling (blockhash confirmation often fails due to expiration)
