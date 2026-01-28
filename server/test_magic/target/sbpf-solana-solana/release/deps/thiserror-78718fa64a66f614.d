@@ -1,0 +1,10 @@
+C:\Users\kenwa\OneDrive\Desktop\anonymaus\anonymaus_sol\server\test_magic\target\sbpf-solana-solana\release\deps\thiserror-78718fa64a66f614.d: C:\Users\kenwa\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\thiserror-1.0.69\src\lib.rs C:\Users\kenwa\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\thiserror-1.0.69\src\aserror.rs C:\Users\kenwa\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\thiserror-1.0.69\src\display.rs C:\Users\kenwa\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\thiserror-1.0.69\src\provide.rs
+
+C:\Users\kenwa\OneDrive\Desktop\anonymaus\anonymaus_sol\server\test_magic\target\sbpf-solana-solana\release\deps\libthiserror-78718fa64a66f614.rlib: C:\Users\kenwa\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\thiserror-1.0.69\src\lib.rs C:\Users\kenwa\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\thiserror-1.0.69\src\aserror.rs C:\Users\kenwa\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\thiserror-1.0.69\src\display.rs C:\Users\kenwa\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\thiserror-1.0.69\src\provide.rs
+
+C:\Users\kenwa\OneDrive\Desktop\anonymaus\anonymaus_sol\server\test_magic\target\sbpf-solana-solana\release\deps\libthiserror-78718fa64a66f614.rmeta: C:\Users\kenwa\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\thiserror-1.0.69\src\lib.rs C:\Users\kenwa\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\thiserror-1.0.69\src\aserror.rs C:\Users\kenwa\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\thiserror-1.0.69\src\display.rs C:\Users\kenwa\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\thiserror-1.0.69\src\provide.rs
+
+C:\Users\kenwa\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\thiserror-1.0.69\src\lib.rs:
+C:\Users\kenwa\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\thiserror-1.0.69\src\aserror.rs:
+C:\Users\kenwa\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\thiserror-1.0.69\src\display.rs:
+C:\Users\kenwa\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\thiserror-1.0.69\src\provide.rs:

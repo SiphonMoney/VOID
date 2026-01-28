@@ -1,0 +1,1 @@
+C:\Users\kenwa\OneDrive\Desktop\anonymaus\anonymaus_sol\server\programs\anonymaus-executor\target\sbpf-solana-solana\release\libanonymaus_executor.rlib: C:\Users\kenwa\OneDrive\Desktop\anonymaus\anonymaus_sol\server\programs\anonymaus-executor\src\lib.rs

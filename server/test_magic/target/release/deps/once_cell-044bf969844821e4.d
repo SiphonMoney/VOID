@@ -1,0 +1,9 @@
+C:\Users\kenwa\OneDrive\Desktop\anonymaus\anonymaus_sol\server\test_magic\target\release\deps\once_cell-044bf969844821e4.d: C:\Users\kenwa\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\once_cell-1.21.3\src\lib.rs C:\Users\kenwa\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\once_cell-1.21.3\src\imp_std.rs C:\Users\kenwa\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\once_cell-1.21.3\src\race.rs
+
+C:\Users\kenwa\OneDrive\Desktop\anonymaus\anonymaus_sol\server\test_magic\target\release\deps\libonce_cell-044bf969844821e4.rlib: C:\Users\kenwa\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\once_cell-1.21.3\src\lib.rs C:\Users\kenwa\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\once_cell-1.21.3\src\imp_std.rs C:\Users\kenwa\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\once_cell-1.21.3\src\race.rs
+
+C:\Users\kenwa\OneDrive\Desktop\anonymaus\anonymaus_sol\server\test_magic\target\release\deps\libonce_cell-044bf969844821e4.rmeta: C:\Users\kenwa\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\once_cell-1.21.3\src\lib.rs C:\Users\kenwa\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\once_cell-1.21.3\src\imp_std.rs C:\Users\kenwa\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\once_cell-1.21.3\src\race.rs
+
+C:\Users\kenwa\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\once_cell-1.21.3\src\lib.rs:
+C:\Users\kenwa\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\once_cell-1.21.3\src\imp_std.rs:
+C:\Users\kenwa\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\once_cell-1.21.3\src\race.rs:

@@ -1,0 +1,19 @@
+[package]
+name = "test-magic"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib", "lib"]
+name = "test_magic"
+
+[features]
+no-entrypoint = []
+no-idl = []
+cpi = ["no-entrypoint"]
+default = []
+
+[dependencies]
+solana-program = "~1.18"
+# MagicBlock SDK (check latest version)
+# ephemeral-rollups-sdk = { git = "https://github.com/magicblock-labs/ephemeral-rollups-sdk", default-features = false }

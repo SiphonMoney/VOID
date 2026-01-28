@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <link rel="stylesheet" href="popup.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Lato:wght@400;700&display=swap" rel="stylesheet">
+</head>
+<body>
+  <!-- Top right corner icons -->
+  <div class="top-right-icons">
+    <button class="icon-btn" id="shieldBtn" title="Shield">
+      <svg class="icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+      </svg>
+    </button>
+    <button class="icon-btn" id="transactionsBtn" title="Transactions">
+      <svg class="icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <rect x="1" y="4" width="22" height="16" rx="2" ry="2"/>
+        <line x1="1" y1="10" x2="23" y2="10"/>
+      </svg>
+    </button>
+    <button class="icon-btn" id="settingsBtn" title="Settings">
+      <svg class="icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z"/>
+        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+      </svg>
+    </button>
+  </div>
+  
+  <!-- Particle Canvas -->
+  <canvas id="particleCanvas"></canvas>
+  
+  <div class="content-area">
+    <div id="mainScreen" class="screen active">
+      <div class="container-wrapper">
+        <div class="gl-canvas-wrapper">
+          <canvas id="glcanvas" class="gl-canvas"></canvas>
+          <canvas id="glcanvasForeground" class="gl-canvas-foreground"></canvas>
+        </div>
+        <div class="circle main" id="anonymizeBtn"></div>
+        <div class="text text--status" id="statusLog">Disconnected</div>
+      </div>
+    </div>
+    <div id="transactionsScreen" class="screen">
+      <div class="transactions-content">
+        <div class="tagline">Transactions</div>
+        <div class="transactions-list" id="transactionsList">
+          <div class="empty-state">No transactions yet</div>
+        </div>
+      </div>
+    </div>
+    <div id="settingsScreen" class="screen">
+      <div class="settings-content">
+        <div class="settings-title">Settings</div>
+        
+        <!-- RPC Selection Section -->
+        <div class="settings-section">
+          <div class="rpc-toggle-row">
+            <div class="test-mode-container">
+              <label class="test-mode-label">RPC Executor</label>
+              <select id="rpcSelector" class="rpc-select">
+                <option value="default">Default (Sepolia)</option>
+                <option value="alchemy">Alchemy</option>
+                <option value="infura">Infura</option>
+                <option value="public">Public RPC</option>
+                <option value="custom">Custom RPC</option>
+              </select>
+            </div>
+          </div>
+          <div id="customRpcContainer" class="custom-rpc-container" style="display: none;">
+            <input type="text" id="customRpcInput" class="custom-rpc-input" placeholder="https://...">
+            <button class="save-rpc-btn" id="saveRpcBtn">Save</button>
+          </div>
+        </div>
+        
+        <!-- Theme Toggle Section -->
+        <div class="settings-section">
+          <div class="rpc-toggle-row">
+            <div class="test-mode-container">
+              <label class="test-mode-label">Dark Mode</label>
+              <label class="toggle-switch">
+                <input type="checkbox" id="themeToggle">
+                <span class="toggle-slider"></span>
+              </label>
+            </div>
+          </div>
+        </div>
+        
+        <!-- Console Logs Section -->
+        <div class="settings-section">
+          <div class="rpc-toggle-row">
+            <div class="test-mode-container">
+              <label class="test-mode-label">Enable Console Logs</label>
+              <label class="toggle-switch">
+                <input type="checkbox" id="consoleLogsToggle">
+                <span class="toggle-slider"></span>
+              </label>
+            </div>
+          </div>
+          <div class="console-viewer collapsed" id="consoleViewer">
+            <div class="console-log">No logs yet. Logs will appear here when extension is active.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Intent Signing Modal -->
+  <div id="intentModal" class="intent-modal" style="display: none;">
+    <div class="intent-modal-content">
+      <div class="intent-modal-header">
+        <h3>Sign Intent</h3>
+        <button class="intent-modal-close" id="intentModalClose">×</button>
+      </div>
+      <div class="intent-modal-body">
+        <div class="intent-summary">
+          <div class="intent-field">
+            <span class="intent-label">Action:</span>
+            <span class="intent-value" id="intentAction">-</span>
+          </div>
+          <div class="intent-field">
+            <span class="intent-label">dApp:</span>
+            <span class="intent-value" id="intentDapp">-</span>
+          </div>
+          <div class="intent-field">
+            <span class="intent-label">Type:</span>
+            <span class="intent-value" id="intentType">-</span>
+          </div>
+          <div class="intent-field">
+            <span class="intent-label">Expires:</span>
+            <span class="intent-value" id="intentExpiry">-</span>
+          </div>
+        </div>
+        <div class="intent-details" id="intentDetails">
+          <!-- Transaction details will be shown here -->
+        </div>
+        <div class="intent-warning">
+          <p>⚠️ You are signing an intent, not a transaction. The TEE network will execute this anonymously on your behalf.</p>
+          <p style="margin-top: 8px; font-size: 10px; color: #666;">MetaMask will prompt you to sign the intent hash.</p>
+        </div>
+      </div>
+      <div class="intent-modal-footer">
+        <button class="intent-btn intent-btn-reject" id="intentRejectBtn">Reject</button>
+        <button class="intent-btn intent-btn-sign" id="intentSignBtn">Sign Intent</button>
+      </div>
+    </div>
+  </div>
+  
+  <script src="functions/console_logs.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html>

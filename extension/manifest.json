@@ -1,0 +1,49 @@
+{
+  "manifest_version": 3,
+  "name": "VØID",
+  "version": "1.0",
+  "description": "Privacy-preserving browser extension for anonymous blockchain transactions",
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "assets/void_icon_16.png",
+      "48": "assets/void_icon_48.png",
+      "128": "assets/void_icon_128.png"
+    }
+  },
+  "icons": {
+    "16": "assets/void_icon_16.png",
+    "48": "assets/void_icon_48.png",
+    "128": "assets/void_icon_128.png"
+  },
+  "permissions": [
+    "storage",
+    "activeTab",
+    "scripting",
+    "notifications",
+    "windows"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "run_at": "document_start",
+      "all_frames": true
+    }
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "web_accessible_resources": [
+    {
+      "resources": ["functions/solana-transaction-interceptor.js", "functions/phantom-signer.js"],
+      "matches": ["<all_urls>"]
+    }
+  ],
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self'"
+  }
+}

@@ -1,0 +1,1 @@
+C:\Users\kenwa\OneDrive\Desktop\anonymaus\anonymaus_sol\server\test_magic\target\sbpf-solana-solana\release\libtest_magic.rlib: C:\Users\kenwa\OneDrive\Desktop\anonymaus\anonymaus_sol\server\test_magic\src\lib.rs
