@@ -1,0 +1,31 @@
+# Node - ignore at root and in any subfolder
+**/node_modules/
+
+# npm
+npm-debug.log*
+.npm
+
+# Env / secrets
+.env
+.env.*
+!.env.example
+
+# Build / output
+dist/
+build/
+*.tsbuildinfo
+
+# IDE / OS
+.idea/
+.vscode/
+*.swp
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Optional: lockfiles if you want to ignore (uncomment if needed)
+# package-lock.json
+# yarn.lock
