@@ -84,6 +84,53 @@ class AnonyMausBackground {
       });
     });
   }
+
+  getRpcStrategyPayload() {
+    return {
+      strategy: this.teeRpcStrategy || 'default',
+      customRpcUrl: this.customRpcUrl || null,
+    };
+  }
+
+  async resolveRpcUrl() {
+    const { strategy, customRpcUrl } = this.getRpcStrategyPayload();
+    const normalizedStrategy = (strategy || 'default').toLowerCase();
+
+    const isValidCustom = typeof customRpcUrl === 'string' && /^https?:\/\//i.test(customRpcUrl);
+    if (normalizedStrategy === 'custom' && isValidCustom) {
+      return customRpcUrl;
+    }
+
+    const defaultRpc = 'https://solana-devnet.g.alchemy.com/v2/Sot3NTHhsx_C1Eunyg9ni';
+    const publicRpc = 'https://api.devnet.solana.com';
+
+    // Try to resolve from server when possible (partner routing)
+    try {
+      const teeEndpoint = this.teeClient?.endpoint || 'http://localhost:3001/api';
+      const base = teeEndpoint.replace('/api', '');
+      const query = new URLSearchParams({
+        strategy: normalizedStrategy,
+        ...(isValidCustom ? { custom: customRpcUrl } : {}),
+      });
+      const response = await fetch(`${base}/api/rpc-url?${query.toString()}`);
+      if (response.ok) {
+        const data = await response.json();
+        if (data?.rpcUrl && /^https?:\/\//i.test(data.rpcUrl)) {
+          return data.rpcUrl;
+        }
+      }
+    } catch (error) {
+      // Ignore and fall back to local defaults
+    }
+
+    if (normalizedStrategy === 'public') {
+      return publicRpc;
+    }
+    if (normalizedStrategy === 'alchemy' || normalizedStrategy === 'infura') {
+      return defaultRpc;
+    }
+    return defaultRpc;
+  }
   
   
   // ============================================================================
@@ -637,7 +684,7 @@ class AnonyMausBackground {
     this.logDepositDetails(requiredLamports, transferAmountLamports, executorPublicKey);
     
     try {
-      const rpcUrl = 'https://solana-devnet.g.alchemy.com/v2/Sot3NTHhsx_C1Eunyg9ni';
+      const rpcUrl = await this.resolveRpcUrl();
       const vaultTransferSignature = await this.requestSolanaVaultTransfer(
         executorPublicKey, 
         transferAmountLamports, 
@@ -764,7 +811,7 @@ class AnonyMausBackground {
     this.log(`💰 [AnonyMaus Solana] Deposit required before execution`, 'info');
     
     const depositExecutorPublicKey = error.executorProgramId || executorPublicKey || 'GG6FnZiz7qo4pfHWNHn8feTTgaqPcB4Zb29jH6zsH3Lv';
-    const rpcUrl = 'https://solana-devnet.g.alchemy.com/v2/Sot3NTHhsx_C1Eunyg9ni';
+    const rpcUrl = await this.resolveRpcUrl();
     
     const txValueLamports = Math.floor(parseFloat(transactionData.value || '0') * 1e9);
     const depositAmount = Math.floor(Math.max(txValueLamports, 0.01 * 1e9) * 1.1);
@@ -785,7 +832,7 @@ class AnonyMausBackground {
     const privacyProgramId = error.privacyProgramId;
     const authorityPubkey = error.authorityPubkey;
     const amountLamports = parseInt(error.amountLamports || '0', 10);
-    const rpcUrl = 'https://solana-devnet.g.alchemy.com/v2/Sot3NTHhsx_C1Eunyg9ni';
+    const rpcUrl = await this.resolveRpcUrl();
 
     if (!privacyProgramId || !authorityPubkey || !amountLamports) {
       throw new Error('Missing privacy deposit params from server');
@@ -1314,6 +1361,7 @@ class AnonyMausBackground {
     this.log(`🔍 [AnonyMaus Solana] swapParams.amountInLamports: ${sanitizedTransactionData.swapParams?.amountInLamports}`, 'info');
     this.log(`🔍 [DEBUG] AFTER sanitization - sanitizedTransactionData.extractedAmountLamports: ${sanitizedTransactionData.extractedAmountLamports}`, 'info');
     
+    const { strategy, customRpcUrl } = this.getRpcStrategyPayload();
     const response = await fetch(`${this.teeClient.endpoint.replace('/api', '')}/api/submit-solana-transaction`, {
       method: 'POST',
       headers: {
@@ -1322,7 +1370,9 @@ class AnonyMausBackground {
       body: JSON.stringify({
         intent: signedIntent,
         transactionData: sanitizedTransactionData,
-        method
+        method,
+        rpcSelector: strategy,
+        customRpcUrl
       })
     });
     

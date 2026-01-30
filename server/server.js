@@ -65,6 +65,46 @@ function getExplorerUrl(signature, rpcUrl) {
   return `https://explorer.solana.com/tx/${signature}?cluster=${cluster}`;
 }
 
+function resolveRpcUrl({ strategy, customUrl, network }) {
+  const normalized = (strategy || 'default').toLowerCase();
+  const isValidCustom = typeof customUrl === 'string' && /^https?:\/\//i.test(customUrl);
+
+  if (normalized === 'custom' && isValidCustom) {
+    return customUrl;
+  }
+
+  const defaultDevnet =
+    process.env.SOLANA_RPC_URL_DEVNET ||
+    process.env.SOLANA_RPC_URL ||
+    'https://solana-devnet.g.alchemy.com/v2/Sot3NTHhsx_C1Eunyg9ni';
+
+  const publicDevnet =
+    process.env.SOLANA_RPC_URL_PUBLIC ||
+    'https://api.devnet.solana.com';
+
+  if (normalized === 'public') {
+    return publicDevnet;
+  }
+
+  if (normalized === 'alchemy') {
+    return process.env.SOLANA_RPC_URL_ALCHEMY || defaultDevnet;
+  }
+
+  if (normalized === 'infura') {
+    return process.env.SOLANA_RPC_URL_INFURA || defaultDevnet;
+  }
+
+  if (network === 'mainnet-beta' || network === 'mainnet') {
+    return process.env.SOLANA_RPC_URL_MAINNET || 'https://api.mainnet-beta.solana.com';
+  }
+
+  if (network === 'testnet') {
+    return process.env.SOLANA_RPC_URL_TESTNET || 'https://api.testnet.solana.com';
+  }
+
+  return defaultDevnet;
+}
+
 
 // Pool discovery functions moved to modules/pool-discovery.js
 
@@ -430,21 +470,20 @@ app.get('/api/status', (req, res) => {
 // API endpoint to get RPC URL (for extension to use)
 app.get('/api/rpc-url', (req, res) => {
   const network = req.query.network || 'devnet';
-  let rpcUrl;
-  
-  if (network === 'mainnet-beta' || network === 'mainnet') {
-    rpcUrl = process.env.SOLANA_RPC_URL_MAINNET || 'https://api.mainnet-beta.solana.com';
-  } else if (network === 'testnet') {
-    rpcUrl = process.env.SOLANA_RPC_URL_TESTNET || 'https://api.testnet.solana.com';
-  } else {
-    // Default to devnet
-    rpcUrl = process.env.SOLANA_RPC_URL_DEVNET || 'https://solana-devnet.g.alchemy.com/v2/Sot3NTHhsx_C1Eunyg9ni';
-  }
+  const strategy = req.query.strategy || 'default';
+  const custom = req.query.custom || null;
+
+  const rpcUrl = resolveRpcUrl({
+    strategy,
+    customUrl: custom,
+    network,
+  });
   
   res.json({ 
     success: true, 
     rpcUrl,
-    network: network
+    network,
+    strategy
   });
 });
 
@@ -465,7 +504,7 @@ app.get('/api/server-logs', (req, res) => {
 // Submit Solana transaction (with rate limiting)
 app.post('/api/submit-solana-transaction', rateLimitMiddleware, async (req, res) => {
   try {
-    const { encryptedIntent, intent: signedIntent, transactionData, method } = req.body;
+    const { encryptedIntent, intent: signedIntent, transactionData, method, rpcSelector, customRpcUrl } = req.body;
 
     log(`🔔 Submit request received (${method || 'unknown'})`, 'info');
     
@@ -515,7 +554,14 @@ app.post('/api/submit-solana-transaction', rateLimitMiddleware, async (req, res)
     const executionPlan = processIntent(intent, log);
     
     // Step 5: Execute Solana transaction via executor program
-    const rpcUrl = process.env.SOLANA_RPC_URL_DEVNET || process.env.SOLANA_RPC_URL || 'https://solana-devnet.g.alchemy.com/v2/Sot3NTHhsx_C1Eunyg9ni';
+    const rpcUrl = resolveRpcUrl({
+      strategy: rpcSelector,
+      customUrl: customRpcUrl,
+      network: process.env.SOLANA_NETWORK || 'devnet',
+    });
+    if (rpcSelector) {
+      log(`🌐 [TEE Server] RPC strategy: ${rpcSelector}`, 'info');
+    }
     const connection = new Connection(rpcUrl, 'confirmed');
     
     // Get execution keypair from environment

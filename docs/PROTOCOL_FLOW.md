@@ -1,8 +1,5 @@
 # Void protocol flow (from `protocol_void.png`)
 
-This is a plain‑English translation of the system diagram so the end‑to‑end
-data flow is unambiguous.
-
 ## Actors
 - **Dapp (unchanged UX)**: standard Solana app calls (`wallet.signTransaction`,
   `wallet.sendTransaction`, etc.).
@@ -21,7 +18,12 @@ data flow is unambiguous.
    - Wallet calls are intercepted before reaching the RPC.
 3. **Extension builds a Solana intent**
    - Instead of a full transaction, the extension builds an intent
-     (instruction graph + metadata).
+     (instruction graph + metadata).Real-time Privacy with MagicBlock
+Build real-time, fully confidential applications using MagicBlock's Private Ephemeral Rollups on Solana. Combine confidential state, real-time execution, and compliance-first approach.
+
+$2,500 — Best Private App
+$1,500 — Second Place
+$1,000 — Third Place
 4. **Extension encrypts the intent for the TEE**
    - Sensitive fields are encrypted client‑side.
    - Only the enclave can decrypt; browser/RPC/relayers cannot.
