@@ -87,23 +87,55 @@ async function run() {
 
   const encryptedHandles = includeFullHandles
     ? {
-        amount: encryptedAmount,
-        threshold: encryptedThreshold,
-        guess: encryptedGuess,
-        flag: encryptedFlag
+        amountLamports: {
+          ciphertext: encryptedAmount,
+          hash: sha256Hex(encryptedAmount),
+          bytes: encryptedAmount.length / 2
+        },
+        thresholdLamports: {
+          ciphertext: encryptedThreshold,
+          hash: sha256Hex(encryptedThreshold),
+          bytes: encryptedThreshold.length / 2
+        },
+        guess: {
+          ciphertext: encryptedGuess,
+          hash: sha256Hex(encryptedGuess),
+          bytes: encryptedGuess.length / 2
+        },
+        flag: {
+          ciphertext: encryptedFlag,
+          hash: sha256Hex(encryptedFlag),
+          bytes: encryptedFlag.length / 2
+        }
       }
     : {
-        amount: { hash: sha256Hex(encryptedAmount), bytes: encryptedAmount.length / 2 },
-        threshold: { hash: sha256Hex(encryptedThreshold), bytes: encryptedThreshold.length / 2 },
-        guess: { hash: sha256Hex(encryptedGuess), bytes: encryptedGuess.length / 2 },
-        flag: { hash: sha256Hex(encryptedFlag), bytes: encryptedFlag.length / 2 }
+        amountLamports: {
+          hash: sha256Hex(encryptedAmount),
+          bytes: encryptedAmount.length / 2
+        },
+        thresholdLamports: {
+          hash: sha256Hex(encryptedThreshold),
+          bytes: encryptedThreshold.length / 2
+        },
+        guess: {
+          hash: sha256Hex(encryptedGuess),
+          bytes: encryptedGuess.length / 2
+        },
+        flag: {
+          hash: sha256Hex(encryptedFlag),
+          bytes: encryptedFlag.length / 2
+        }
       };
 
   console.log('🟢 [Step 3] Build intent payload (public metadata only)');
   const intent = {
     intent: 'swap',
     intentId: `intent-${Date.now()}`,
-    encryptedHandles,
+    inco: {
+      mode: 'inco',
+      handleFormat: 'sha256',
+      handles: encryptedHandles
+    },
     publicMeta: {
       programId: executorProgramId.toBase58(),
       user: userKeypair.publicKey.toBase58(),

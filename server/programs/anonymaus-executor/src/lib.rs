@@ -7,18 +7,24 @@ use solana_program::{
     account_info::{next_account_info, AccountInfo},
     entrypoint,
     entrypoint::ProgramResult,
+    hash::hash,
+    instruction::{AccountMeta, Instruction},
+    msg,
+    program::{get_return_data, invoke, invoke_signed},
     program_error::ProgramError,
     program_pack::{IsInitialized, Pack, Sealed},
     pubkey::Pubkey,
-    msg,
     sysvar::{rent::Rent, Sysvar},
     system_instruction,
-    program::{invoke, invoke_signed},
 };
 
 // Program ID - will be replaced during build with actual program ID
 // Using a placeholder that's 32 bytes when base58 decoded
 solana_program::declare_id!("11111111111111111111111111111111");
+
+mod inco_lightning_program {
+    solana_program::declare_id!("5sjEbPiqgZrYwR31ahR6Uk9wf5awoX61YGg7jExQSwaj");
+}
 
 // Entry point
 entrypoint!(process_instruction);
@@ -28,6 +34,152 @@ const INITIALIZE: u8 = 0;
 const DEPOSIT: u8 = 1;
 const WITHDRAW: u8 = 2;
 const EXECUTE_WITH_INTENT: u8 = 3;
+
+fn inco_sighash(name: &str) -> [u8; 8] {
+    let preimage = format!("{}:{}", "global", name);
+    let mut sighash_bytes = [0u8; 8];
+    sighash_bytes.copy_from_slice(&hash(preimage.as_bytes()).to_bytes()[..8]);
+    sighash_bytes
+}
+
+fn inco_return_u128() -> Result<u128, ProgramError> {
+    let (_program_id, return_data) = get_return_data().ok_or(ProgramError::InvalidAccountData)?;
+    if return_data.len() < 16 {
+        return Err(ProgramError::InvalidAccountData);
+    }
+    let mut bytes = [0u8; 16];
+    bytes.copy_from_slice(&return_data[..16]);
+    Ok(u128::from_le_bytes(bytes))
+}
+
+fn inco_new_euint128(
+    signer: &AccountInfo,
+    inco_program: &AccountInfo,
+    ciphertext: &[u8],
+    input_type: u8,
+) -> Result<u128, ProgramError> {
+    let mut data = Vec::with_capacity(8 + 4 + ciphertext.len() + 1);
+    data.extend_from_slice(&inco_sighash("new_euint128"));
+    data.extend_from_slice(&(ciphertext.len() as u32).to_le_bytes());
+    data.extend_from_slice(ciphertext);
+    data.push(input_type);
+
+    let ix = Instruction {
+        program_id: inco_lightning_program::ID,
+        accounts: vec![AccountMeta::new(*signer.key, true)],
+        data,
+    };
+
+    invoke(&ix, &[signer.clone(), inco_program.clone()])?;
+    inco_return_u128()
+}
+
+fn inco_as_euint128(
+    signer: &AccountInfo,
+    inco_program: &AccountInfo,
+    value: u128,
+) -> Result<u128, ProgramError> {
+    let mut data = Vec::with_capacity(8 + 16);
+    data.extend_from_slice(&inco_sighash("as_euint128"));
+    data.extend_from_slice(&value.to_le_bytes());
+
+    let ix = Instruction {
+        program_id: inco_lightning_program::ID,
+        accounts: vec![AccountMeta::new(*signer.key, true)],
+        data,
+    };
+
+    invoke(&ix, &[signer.clone(), inco_program.clone()])?;
+    inco_return_u128()
+}
+
+fn inco_e_add(
+    signer: &AccountInfo,
+    inco_program: &AccountInfo,
+    lhs: u128,
+    rhs: u128,
+) -> Result<u128, ProgramError> {
+    let mut data = Vec::with_capacity(8 + 16 + 16 + 1);
+    data.extend_from_slice(&inco_sighash("e_add"));
+    data.extend_from_slice(&lhs.to_le_bytes());
+    data.extend_from_slice(&rhs.to_le_bytes());
+    data.push(0);
+
+    let ix = Instruction {
+        program_id: inco_lightning_program::ID,
+        accounts: vec![AccountMeta::new(*signer.key, true)],
+        data,
+    };
+
+    invoke(&ix, &[signer.clone(), inco_program.clone()])?;
+    inco_return_u128()
+}
+
+fn inco_e_sub(
+    signer: &AccountInfo,
+    inco_program: &AccountInfo,
+    lhs: u128,
+    rhs: u128,
+) -> Result<u128, ProgramError> {
+    let mut data = Vec::with_capacity(8 + 16 + 16 + 1);
+    data.extend_from_slice(&inco_sighash("e_sub"));
+    data.extend_from_slice(&lhs.to_le_bytes());
+    data.extend_from_slice(&rhs.to_le_bytes());
+    data.push(0);
+
+    let ix = Instruction {
+        program_id: inco_lightning_program::ID,
+        accounts: vec![AccountMeta::new(*signer.key, true)],
+        data,
+    };
+
+    invoke(&ix, &[signer.clone(), inco_program.clone()])?;
+    inco_return_u128()
+}
+
+fn inco_e_ge(
+    signer: &AccountInfo,
+    inco_program: &AccountInfo,
+    lhs: u128,
+    rhs: u128,
+) -> Result<u128, ProgramError> {
+    let mut data = Vec::with_capacity(8 + 16 + 16 + 1);
+    data.extend_from_slice(&inco_sighash("e_ge"));
+    data.extend_from_slice(&lhs.to_le_bytes());
+    data.extend_from_slice(&rhs.to_le_bytes());
+    data.push(0);
+
+    let ix = Instruction {
+        program_id: inco_lightning_program::ID,
+        accounts: vec![AccountMeta::new(*signer.key, true)],
+        data,
+    };
+
+    invoke(&ix, &[signer.clone(), inco_program.clone()])?;
+    inco_return_u128()
+}
+
+fn inco_e_eq(
+    signer: &AccountInfo,
+    inco_program: &AccountInfo,
+    lhs: u128,
+    rhs: u128,
+) -> Result<u128, ProgramError> {
+    let mut data = Vec::with_capacity(8 + 16 + 16 + 1);
+    data.extend_from_slice(&inco_sighash("e_eq"));
+    data.extend_from_slice(&lhs.to_le_bytes());
+    data.extend_from_slice(&rhs.to_le_bytes());
+    data.push(0);
+
+    let ix = Instruction {
+        program_id: inco_lightning_program::ID,
+        accounts: vec![AccountMeta::new(*signer.key, true)],
+        data,
+    };
+
+    invoke(&ix, &[signer.clone(), inco_program.clone()])?;
+    inco_return_u128()
+}
 
 /// Main entry point for processing instructions
 pub fn process_instruction(
@@ -149,22 +301,30 @@ fn initialize(
 /// 0. [writable] Vault PDA (seeds: ["vault"])
 /// 1. [writable, signer] User
 /// 2. [writable] User Deposit PDA (seeds: ["user_deposit", user.key()])
+/// 3. [] Inco Lightning Program
 /// 3. [] System Program
+/// 4. [] Inco Lightning Program
 /// 
-/// Instruction data: amount (8 bytes, little-endian u64)
+/// Instruction data:
+/// - amount (8 bytes, little-endian u64)
+/// - ciphertext_len (4 bytes, little-endian u32)
+/// - ciphertext (variable)
+/// - input_type (1 byte)
 fn deposit(
     program_id: &Pubkey,
     accounts: &[AccountInfo],
     data: &[u8],
 ) -> ProgramResult {
-    msg!("Deposit SOL to vault");
+    msg!("Deposit SOL to vault (v2.1)");
     
     let accounts_iter = &mut accounts.iter();
     
     let vault_account = next_account_info(accounts_iter)?;
     let user_account = next_account_info(accounts_iter)?;
     let user_deposit_account = next_account_info(accounts_iter)?;
+    let inco_program = next_account_info(accounts_iter)?;
     let system_program = next_account_info(accounts_iter)?;
+    let inco_program = next_account_info(accounts_iter)?;
     
     // Verify user is signer
     if !user_account.is_signer {
@@ -192,7 +352,7 @@ fn deposit(
     }
     
     // Parse amount from instruction data
-    if data.len() < 8 {
+    if data.len() < 13 {
         return Err(ProgramError::InvalidInstructionData);
     }
     
@@ -200,6 +360,14 @@ fn deposit(
         data[0], data[1], data[2], data[3],
         data[4], data[5], data[6], data[7],
     ]);
+    let ciphertext_len = u32::from_le_bytes([data[8], data[9], data[10], data[11]]) as usize;
+    if data.len() < 12 + ciphertext_len + 1 {
+        return Err(ProgramError::InvalidInstructionData);
+    }
+    let ciphertext_start = 12;
+    let ciphertext_end = ciphertext_start + ciphertext_len;
+    let ciphertext = &data[ciphertext_start..ciphertext_end];
+    let input_type = data[ciphertext_end];
     
     if amount == 0 {
         return Err(ProgramError::InvalidArgument);
@@ -290,8 +458,22 @@ fn deposit(
         msg!("User deposit PDA account created");
     }
     
-    // Update user deposit balance
-    let mut user_deposit = if user_deposit_account.data.borrow()[0] == 0 {
+    // Update user deposit encrypted balance
+    let deposit_data = user_deposit_account.data.borrow();
+    let deposit_data_len = deposit_data.len();
+    if deposit_data_len < UserDeposit::LEN {
+        msg!(
+            "User deposit account has invalid size: {} (expected {})",
+            deposit_data_len,
+            UserDeposit::LEN
+        );
+        return Err(ProgramError::InvalidAccountData);
+    }
+
+    let is_uninitialized = deposit_data.get(0).copied().unwrap_or(0) == 0;
+    drop(deposit_data);
+
+    let mut user_deposit = if is_uninitialized {
         // Initialize if new account (just created)
         UserDeposit {
             user: *user_account.key,
@@ -302,13 +484,17 @@ fn deposit(
         UserDeposit::unpack(&user_deposit_account.data.borrow())?
     };
     
-    user_deposit.balance = user_deposit.balance
-        .checked_add(amount)
-        .ok_or(ProgramError::ArithmeticOverflow)?;
+    if user_deposit.balance == 0 {
+        user_deposit.user = *user_account.key;
+        user_deposit.balance = inco_as_euint128(user_account, inco_program, 0)?;
+    }
+
+    let encrypted_amount = inco_new_euint128(user_account, inco_program, ciphertext, input_type)?;
+    user_deposit.balance = inco_e_add(user_account, inco_program, user_deposit.balance, encrypted_amount)?;
     
     user_deposit.pack_into_slice(&mut user_deposit_account.data.borrow_mut());
     
-    msg!("Deposited {} lamports. New balance: {}", amount, user_deposit.balance);
+    msg!("Deposited {} lamports (encrypted balance updated)", amount);
     
     Ok(())
 }
@@ -377,16 +563,16 @@ fn withdraw(
         return Err(ProgramError::InvalidAccountData);
     }
     
-    // Check sufficient balance
-    if user_deposit.balance < amount {
-        msg!("Insufficient balance: {} < {}", user_deposit.balance, amount);
+    // Encrypted balance check
+    let encrypted_amount = inco_as_euint128(user_account, inco_program, amount as u128)?;
+    let sufficient = inco_e_ge(user_account, inco_program, user_deposit.balance, encrypted_amount)?;
+    if sufficient == 0 {
+        msg!("Insufficient encrypted balance");
         return Err(ProgramError::InsufficientFunds);
     }
     
-    // Update balance
-    user_deposit.balance = user_deposit.balance
-        .checked_sub(amount)
-        .ok_or(ProgramError::ArithmeticOverflow)?;
+    // Update encrypted balance
+    user_deposit.balance = inco_e_sub(user_account, inco_program, user_deposit.balance, encrypted_amount)?;
     
     user_deposit.pack_into_slice(&mut user_deposit_account.data.borrow_mut());
     
@@ -394,7 +580,7 @@ fn withdraw(
     **vault_account.try_borrow_mut_lamports()? -= amount;
     **user_account.try_borrow_mut_lamports()? += amount;
     
-    msg!("Withdrew {} lamports. New balance: {}", amount, user_deposit.balance);
+    msg!("Withdrew {} lamports (encrypted balance updated)", amount);
     
     Ok(())
 }
@@ -408,12 +594,16 @@ fn withdraw(
 /// 3. [] User (not signer - signature verified via intent)
 /// 4. [writable] Execution Account (fund receiver)
 /// 5. [] System Program
+/// 6. [] Inco Lightning Program
 /// 
 /// Instruction data:
 /// - intent_hash (32 bytes)
 /// - signature_length (4 bytes, little-endian u32)
 /// - signature (variable length)
 /// - amount (8 bytes, little-endian u64)
+/// - ciphertext_len (4 bytes, little-endian u32)
+/// - ciphertext (variable)
+/// - input_type (1 byte)
 fn execute_with_intent(
     program_id: &Pubkey,
     accounts: &[AccountInfo],
@@ -429,6 +619,7 @@ fn execute_with_intent(
     let user_account = next_account_info(accounts_iter)?;
     let execution_account = next_account_info(accounts_iter)?;
     let _system_program = next_account_info(accounts_iter)?;
+    let inco_program = next_account_info(accounts_iter)?;
     
     // Verify executor PDA
     let (executor_pda, _) = Pubkey::find_program_address(
@@ -444,6 +635,9 @@ fn execute_with_intent(
     let executor_data = Executor::unpack(&executor_account.data.borrow())?;
     if executor_data.execution_account != *execution_account.key {
         return Err(ProgramError::InvalidAccountData);
+    }
+    if !execution_account.is_signer {
+        return Err(ProgramError::MissingRequiredSignature);
     }
     
     // Verify vault PDA
@@ -480,7 +674,7 @@ fn execute_with_intent(
         data[32], data[33], data[34], data[35],
     ]) as usize;
     
-    if data.len() < 36 + signature_len + 8 {
+    if data.len() < 36 + signature_len + 8 + 4 + 1 {
         return Err(ProgramError::InvalidInstructionData);
     }
     
@@ -499,21 +693,46 @@ fn execute_with_intent(
         data[amount_offset + 6],
         data[amount_offset + 7],
     ]);
+
+    let ciphertext_len_offset = amount_offset + 8;
+    let ciphertext_len = u32::from_le_bytes([
+        data[ciphertext_len_offset],
+        data[ciphertext_len_offset + 1],
+        data[ciphertext_len_offset + 2],
+        data[ciphertext_len_offset + 3],
+    ]) as usize;
+
+    let ciphertext_start = ciphertext_len_offset + 4;
+    let ciphertext_end = ciphertext_start + ciphertext_len;
+    if data.len() < ciphertext_end + 1 {
+        return Err(ProgramError::InvalidInstructionData);
+    }
+    let ciphertext = &data[ciphertext_start..ciphertext_end];
+    let input_type = data[ciphertext_end];
     
     if signature.is_empty() {
         return Err(ProgramError::InvalidArgument);
     }
     
     // Unpack user deposit
-    let user_deposit = UserDeposit::unpack(&user_deposit_account.data.borrow())?;
+    let mut user_deposit = UserDeposit::unpack(&user_deposit_account.data.borrow())?;
     
     // Verify user owns this deposit
     if user_deposit.user != *user_account.key {
         return Err(ProgramError::InvalidAccountData);
     }
     
-    // Check balance > 0 (actual amount needed would be determined by instructions)
-    if user_deposit.balance < amount || amount == 0 {
+    // Build encrypted amount from ciphertext and verify it matches plaintext amount
+    let encrypted_amount = inco_new_euint128(execution_account, inco_program, ciphertext, input_type)?;
+    let plaintext_amount = inco_as_euint128(execution_account, inco_program, amount as u128)?;
+    let matches = inco_e_eq(execution_account, inco_program, encrypted_amount, plaintext_amount)?;
+    if matches == 0 {
+        return Err(ProgramError::InvalidArgument);
+    }
+
+    // Encrypted balance check (use execution signer for Inco CPI)
+    let sufficient = inco_e_ge(execution_account, inco_program, user_deposit.balance, encrypted_amount)?;
+    if amount == 0 || sufficient == 0 {
         return Err(ProgramError::InsufficientFunds);
     }
     
@@ -521,10 +740,8 @@ fn execute_with_intent(
     // For now, we just check that signature is provided
     // In production, use solana_program::ed25519_program or similar
     
-    // Deduct balance and move funds from vault to execution account
-    user_deposit.balance = user_deposit.balance
-        .checked_sub(amount)
-        .ok_or(ProgramError::ArithmeticOverflow)?;
+    // Deduct encrypted balance and move funds from vault to execution account
+    user_deposit.balance = inco_e_sub(execution_account, inco_program, user_deposit.balance, encrypted_amount)?;
     user_deposit.pack_into_slice(&mut user_deposit_account.data.borrow_mut());
 
     **vault_account.try_borrow_mut_lamports()? -= amount;
@@ -596,7 +813,7 @@ impl Pack for Executor {
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct UserDeposit {
     pub user: Pubkey,
-    pub balance: u64,
+    pub balance: u128,
 }
 
 impl Sealed for UserDeposit {}
@@ -608,7 +825,7 @@ impl IsInitialized for UserDeposit {
 }
 
 impl Pack for UserDeposit {
-    const LEN: usize = 32 + 8; // user + balance
+    const LEN: usize = 32 + 16; // user + encrypted balance (u128)
 
     fn pack_into_slice(&self, dst: &mut [u8]) {
         if dst.len() < UserDeposit::LEN {
@@ -616,7 +833,7 @@ impl Pack for UserDeposit {
         }
         
         dst[0..32].copy_from_slice(self.user.as_ref());
-        dst[32..40].copy_from_slice(&self.balance.to_le_bytes());
+        dst[32..48].copy_from_slice(&self.balance.to_le_bytes());
     }
 
     fn unpack_from_slice(src: &[u8]) -> Result<Self, ProgramError> {
@@ -624,15 +841,15 @@ impl Pack for UserDeposit {
             return Err(ProgramError::InvalidAccountData);
         }
         
-        let mut balance_bytes = [0u8; 8];
-        balance_bytes.copy_from_slice(&src[32..40]);
+        let mut balance_bytes = [0u8; 16];
+        balance_bytes.copy_from_slice(&src[32..48]);
         
         let mut user_bytes = [0u8; 32];
         user_bytes.copy_from_slice(&src[0..32]);
         
         Ok(UserDeposit {
             user: Pubkey::new_from_array(user_bytes),
-            balance: u64::from_le_bytes(balance_bytes),
+            balance: u128::from_le_bytes(balance_bytes),
         })
     }
 }

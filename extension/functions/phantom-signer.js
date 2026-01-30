@@ -15,6 +15,8 @@
   }
 
   console.log('%c✍️ [AnonyMaus Solana] Phantom Signer loaded in page context', 'color: #4caf50; font-weight: bold;');
+
+  const INCO_LIGHTNING_PROGRAM_ID = '5sjEbPiqgZrYwR31ahR6Uk9wf5awoX61YGg7jExQSwaj';
   
   // Test message handler to verify connectivity
   window.addEventListener('message', (event) => {
@@ -95,7 +97,7 @@
 
     // Handle Solana vault transfer request
     if (event.data && event.data.type === 'ANONYMAUS_SOLANA_VAULT_TRANSFER_REQUEST') {
-      const { executorProgramId, lamports, requestId, rpcUrl, vaultPDA } = event.data;
+      const { executorProgramId, lamports, requestId, rpcUrl, vaultPDA, encryptedDeposit, teeEndpoint } = event.data;
 
       try {
         // CRITICAL: Set flag to prevent re-interception (prevents infinite loop)
@@ -272,6 +274,7 @@
 
         // Derive PDAs for deposit instruction
         const executorProgramPubkey = new PublicKey(executorProgramIdStr);
+        const incoProgramPubkey = new PublicKey(INCO_LIGHTNING_PROGRAM_ID);
         
         // Verify program exists on-chain
         const programInfo = await connection.getAccountInfo(executorProgramPubkey);
@@ -328,13 +331,56 @@
         const depositTransaction = new Transaction();
         const DEPOSIT_INSTRUCTION = 1; // Must match program discriminator
 
-        // Build instruction data: [discriminator (1 byte)] + [amount (8 bytes LE)]
+        let depositCiphertext = encryptedDeposit?.ciphertext;
+        if (!depositCiphertext) {
+          try {
+            const baseUrl = (teeEndpoint || 'http://localhost:3001/api').replace('/api', '');
+            const response = await fetch(`${baseUrl}/api/inco-encrypt`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ values: { amountLamports: lamports } })
+            });
+            if (!response.ok) {
+              const errorData = await response.json().catch(() => ({ error: response.statusText }));
+              throw new Error(errorData.error || 'Inco encrypt failed');
+            }
+            const data = await response.json();
+            depositCiphertext = data?.handles?.amountLamports?.ciphertext || null;
+          } catch (error) {
+            throw new Error(`Missing encrypted deposit ciphertext (${error.message})`);
+          }
+        }
+
+        const hexToBytes = (hex) => {
+          const normalized = hex.startsWith('0x') ? hex.slice(2) : hex;
+          const bytes = new Uint8Array(normalized.length / 2);
+          for (let i = 0; i < bytes.length; i++) {
+            bytes[i] = parseInt(normalized.substr(i * 2, 2), 16);
+          }
+          return bytes;
+        };
+
+        // Build instruction data:
+        // [discriminator (1 byte)] + [amount (8 bytes LE)]
+        // + [ciphertext_len (4 bytes LE)] + [ciphertext bytes] + [input_type (1 byte)]
         const amountBigInt = BigInt(lamports);
-        const data = new Uint8Array(1 + 8);
+        const ciphertextBytes = hexToBytes(depositCiphertext);
+        const data = new Uint8Array(1 + 8 + 4 + ciphertextBytes.length + 1);
         data[0] = DEPOSIT_INSTRUCTION;
         for (let i = 0; i < 8; i++) {
           data[1 + i] = Number((amountBigInt >> BigInt(8 * i)) & BigInt(0xff));
         }
+        const lenOffset = 1 + 8;
+        data[lenOffset] = ciphertextBytes.length & 0xff;
+        data[lenOffset + 1] = (ciphertextBytes.length >> 8) & 0xff;
+        data[lenOffset + 2] = (ciphertextBytes.length >> 16) & 0xff;
+        data[lenOffset + 3] = (ciphertextBytes.length >> 24) & 0xff;
+        data.set(ciphertextBytes, lenOffset + 4);
+        const inputType =
+          (encryptedDeposit && typeof encryptedDeposit.inputType === 'number')
+            ? encryptedDeposit.inputType
+            : 0;
+        data[data.length - 1] = inputType;
 
         const depositInstruction = new TransactionInstruction({
           programId: executorProgramPubkey,
@@ -343,6 +389,7 @@
             { pubkey: userPublicKey, isSigner: true, isWritable: true },
             { pubkey: userDepositPDA, isSigner: false, isWritable: true },
             { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
+            { pubkey: incoProgramPubkey, isSigner: false, isWritable: false },
           ],
           data
         });
@@ -369,9 +416,28 @@
         console.log(`      Blockhash: ${depositTransaction.recentBlockhash}`, 'color: #ff1493;');
         console.log(`      Fee payer: ${depositTransaction.feePayer.toString()}`, 'color: #ff1493;');
         console.log(`      Instructions: ${depositTransaction.instructions.length}`, 'color: #ff1493;');
+        console.log(`      Ciphertext bytes: ${ciphertextBytes.length}`, 'color: #ff1493;');
+        console.log(`      Input type: ${inputType}`, 'color: #ff1493;');
         
-        // Skip simulation in-page to avoid SDK incompatibilities
-        console.log(`%cℹ️ [AnonyMaus Solana] Skipping simulation (Phantom will validate)`, 'color: #4caf50;');
+        // Simulate before sending so we capture program logs if it fails
+        try {
+          const simulation = await connection.simulateTransaction(depositTransaction);
+          if (simulation?.value?.err) {
+            console.error(`%c❌ [AnonyMaus Solana] Deposit simulation failed`, 'color: #ff1493; font-weight: bold;');
+            if (simulation.value.logs) {
+              console.error(`   Program logs (first 15):`, simulation.value.logs.slice(0, 15), 'color: #ff1493;');
+            }
+            throw new Error(`Deposit simulation failed: ${JSON.stringify(simulation.value.err)}`);
+          }
+          console.log(`%c✅ [AnonyMaus Solana] Deposit simulation passed`, 'color: #4caf50;');
+        } catch (simError) {
+          const simMessage = simError?.message || simError?.toString() || 'Unknown simulation error';
+          console.error(`%c❌ [AnonyMaus Solana] Simulation error: ${simMessage}`, 'color: #ff1493; font-weight: bold;');
+          if (!/invalid arguments/i.test(simMessage)) {
+            throw simError;
+          }
+          console.warn(`%c⚠️ [AnonyMaus Solana] Simulation skipped due to RPC args mismatch`, 'color: #ffa500; font-weight: bold;');
+        }
         
         let signedTx;
         try {
@@ -586,6 +652,7 @@
         const connection = new Connection(connectionRpcUrl, 'confirmed');
         console.log('%c🔧 [AnonyMaus Solana] Parsing program pubkey...', 'color: #ffa500;');
         const programPubkey = new PublicKey(privacyProgramId);
+        const incoProgramPubkey = new PublicKey(INCO_LIGHTNING_PROGRAM_ID);
         console.log('%c🔧 [AnonyMaus Solana] Parsing authority pubkey...', 'color: #ffa500;');
         const authority = new PublicKey(authorityPubkey);
         console.log('%c✅ [AnonyMaus Solana] Program and authority parsed', 'color: #4caf50;');
@@ -624,6 +691,7 @@
             { pubkey: userPublicKey, isSigner: true, isWritable: true },
             { pubkey: userDepositPDA, isSigner: false, isWritable: true },
             { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
+            { pubkey: incoProgramPubkey, isSigner: false, isWritable: false },
           ],
           data
         });

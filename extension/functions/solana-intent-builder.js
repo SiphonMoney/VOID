@@ -41,6 +41,16 @@ class SolanaIntentBuilder {
         dappUrl: this.getDappUrl(),
         dappName: this.getDappName(),
         interceptedAt: Date.now()
+      },
+
+      // Sensitive fields (kept locally until Inco handles are attached)
+      privacy: this.extractPrivacy(transactionData),
+
+      // Inco handle container (filled before signing)
+      inco: {
+        mode: 'inco',
+        handleFormat: 'sha256',
+        handles: null
       }
     };
 
@@ -189,6 +199,25 @@ class SolanaIntentBuilder {
   }
 
   /**
+   * Extract sensitive values for Inco encryption
+   */
+  extractPrivacy(transactionData) {
+    const swapParams = transactionData.swapParams || {};
+    const amountLamports =
+      swapParams.amountInLamports ||
+      transactionData.extractedAmountLamports ||
+      null;
+
+    return {
+      amountLamports,
+      inputMint: swapParams.inputMint || null,
+      outputMint: swapParams.outputMint || null,
+      poolId: swapParams.poolId || null,
+      slippageBps: swapParams.slippageBps || null
+    };
+  }
+
+  /**
    * Validate intent before signing
    */
   validateIntent(intent) {
@@ -215,6 +244,12 @@ class SolanaIntentBuilder {
         errors.push('Transaction has no instructions and no serialized data');
       }
       // Otherwise, it's OK - backend will deserialize the serialized transaction
+    }
+
+    if (intent.inco?.mode === 'inco' && (intent.action === 'swap' || intent.action === 'transfer')) {
+      if (!intent.inco?.handles || !intent.inco.handles.amountLamports) {
+        errors.push('Missing Inco encrypted handles for amount');
+      }
     }
 
     return {

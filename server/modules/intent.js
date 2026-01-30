@@ -127,6 +127,33 @@ export function processIntent(intent, log) {
 }
 
 /**
+ * Validate Inco handles presence and ensure no plaintext privacy fields remain
+ * @param {Object} intent - The intent to validate
+ * @param {Function} log - Logging function
+ */
+export function validateIncoHandles(intent, log) {
+  const handles = intent?.inco?.handles;
+  if (!handles) {
+    throw new Error('Missing Inco handles on intent');
+  }
+
+  const plaintextPrivacy = intent?.privacy;
+  if (plaintextPrivacy && Object.values(plaintextPrivacy).some((value) => value !== null && value !== undefined)) {
+    throw new Error('Plaintext privacy fields must not be sent to the server');
+  }
+
+  if (intent.action === 'swap' || intent.action === 'transfer') {
+    const requiredKeys = ['amountLamports'];
+    const missing = requiredKeys.filter((key) => !(key in handles));
+    if (missing.length > 0) {
+      throw new Error(`Missing required Inco handles: ${missing.join(', ')}`);
+    }
+  }
+
+  log('✅ Inco handle validation passed', 'success');
+}
+
+/**
  * Generate TEE approval signature
  * @param {Object} intent - The intent
  * @param {Object} executionPlan - The execution plan

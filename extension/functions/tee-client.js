@@ -10,21 +10,13 @@ class TEEClient {
   }
 
   /**
-   * Send encrypted intent to TEE for approval
-   * @param {Object} encryptedIntent - The encrypted intent
+   * Send signed intent to TEE for approval
+   * @param {Object} intent - The signed intent
    * @returns {Promise<Object>} TEE approval response
    */
-  async requestApproval(encryptedIntent) {
+  async requestApproval(intent) {
     try {
-      console.log(`[AnonyMaus TEE Client] Sending encrypted intent to TEE server: ${this.endpoint}/approve`);
-      console.log(`[AnonyMaus TEE Client] Encrypted payload:`, {
-        algorithm: encryptedIntent.algorithm,
-        encryptionType: encryptedIntent.encryptionType || 'legacy',
-        encryptedLength: encryptedIntent.encrypted?.length || 0,
-        ivLength: encryptedIntent.iv?.length || 0,
-        encryptedKeyLength: encryptedIntent.encryptedKey?.length || 0,
-        keyLength: encryptedIntent.key?.length || 0 // Legacy format
-      });
+      console.log(`[AnonyMaus TEE Client] Sending signed intent to TEE server: ${this.endpoint}/approve`);
       
       // Send to TEE server
       const response = await fetch(`${this.endpoint}/approve`, {
@@ -33,7 +25,7 @@ class TEEClient {
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          encryptedIntent: encryptedIntent
+          intent: intent
         }),
         signal: AbortSignal.timeout(this.timeout)
       });

@@ -680,20 +680,24 @@ class AnonyMausBackground {
     }
     
     const intent = await this.buildSolanaIntent(transactionData, method);
+
+    // Attach Inco handles before signing (removes plaintext privacy fields)
+    this.log(`🔐 [AnonyMaus Solana] Encrypting sensitive intent fields with Inco...`, 'info');
+    const intentWithHandles = await this.encryption.attachIncoHandles(intent);
     
-    this.log(`✅ [AnonyMaus Solana] Intent built:`, 'success');
-    this.logIntentDetails(intent);
+    this.log(`✅ [AnonyMaus Solana] Intent built with Inco handles:`, 'success');
+    this.logIntentDetails(intentWithHandles);
     
     // Validate intent
     if (this.solanaIntentBuilder && this.solanaIntentBuilder.validateIntent) {
-      const validation = this.solanaIntentBuilder.validateIntent(intent);
+      const validation = this.solanaIntentBuilder.validateIntent(intentWithHandles);
       if (!validation.valid) {
         throw new Error(`Invalid intent: ${validation.errors.join(', ')}`);
       }
       this.log(`✅ [AnonyMaus Solana] Intent validation passed`, 'success');
     }
     
-    return intent;
+    return intentWithHandles;
   }
   
   // ============================================================================
@@ -942,6 +946,7 @@ class AnonyMausBackground {
     
     return new Promise(async (resolve, reject) => {
       const requestId = `solana_vault_transfer_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      let encryptedDeposit = null;
       
       // Listen for transfer result
       const transferHandler = async (message, sender, sendResponse) => {
@@ -976,10 +981,33 @@ class AnonyMausBackground {
           }
         } catch (e) {}
 
+        if (this.encryption?.buildIncoHandles) {
+          try {
+            const { handles } = await this.encryption.buildIncoHandles({
+              amountLamports: lamports
+            });
+            if (handles?.amountLamports?.ciphertext) {
+              encryptedDeposit = {
+                ciphertext: handles.amountLamports.ciphertext,
+                inputType: 0
+              };
+            }
+          } catch (error) {
+            this.log(`⚠️ [AnonyMaus Solana] Failed to encrypt deposit amount: ${error.message}`, 'warn');
+          }
+        }
+
+        if (!encryptedDeposit?.ciphertext) {
+          throw new Error('Inco encryption unavailable. Ensure the TEE server is running and /api/inco-encrypt is reachable.');
+        }
+
+        const teeEndpoint = this.teeClient?.endpoint || 'http://localhost:3001/api';
         await chrome.tabs.sendMessage(tabId, {
           type: 'ANONYMAUS_SOLANA_VAULT_TRANSFER_REQUEST',
           executorProgramId: executorProgramId,
           lamports: lamports,
+          encryptedDeposit,
+          teeEndpoint,
           rpcUrl: rpcUrl,
           requestId: requestId,
           expectedOrigin: expectedOrigin
@@ -1225,14 +1253,10 @@ class AnonyMausBackground {
       throw new Error('Missing signed intent');
     }
 
-    this.log(`🔐 [AnonyMaus] Encrypting signed intent...`, 'info');
+    this.log(`🔐 [AnonyMaus] Sending signed intent to TEE (Inco handles already attached)...`, 'info');
     
     try {
-      const encryptedIntent = await this.encryption.encryptIntent(signedIntent);
-      this.log(`✅ [AnonyMaus] Intent encrypted successfully`, 'info');
-      
-      this.log(`📡 [AnonyMaus] Sending encrypted intent to TEE network...`, 'info');
-      const teeApproval = await this.teeClient.requestApproval(encryptedIntent);
+      const teeApproval = await this.teeClient.requestApproval(signedIntent);
       this.log(`✅ [AnonyMaus] TEE approval received`, 'info');
       
       return teeApproval;
@@ -1246,7 +1270,6 @@ class AnonyMausBackground {
     if (!signedIntent) {
       throw new Error('Missing signed intent');
     }
-    const encryptedIntent = await this.encryption.encryptIntent(signedIntent);
     
     // Log BEFORE sanitization
     this.log(`🔍 [DEBUG] BEFORE sanitization - transactionData.extractedAmountLamports: ${transactionData.extractedAmountLamports} (type: ${typeof transactionData.extractedAmountLamports})`, 'info');
@@ -1297,7 +1320,7 @@ class AnonyMausBackground {
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        encryptedIntent,
+        intent: signedIntent,
         transactionData: sanitizedTransactionData,
         method
       })

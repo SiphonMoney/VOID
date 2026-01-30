@@ -34,6 +34,7 @@ npm run test:inco:flow
 
 ### What this flow covers
 - **Client encryption**: plaintext intent values are encrypted with Inco.
+- **Handle packaging**: intent carries `inco.handles` (ciphertext + hash/size).
 - **Intent signature**: user signs the intent after encryption.
 - **Executor handoff**: encrypted intent is sent to a mock executor.
 - **Transaction build**: executor builds a transaction (memo only) and returns it.

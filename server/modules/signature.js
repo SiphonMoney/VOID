@@ -90,6 +90,10 @@ export function verifySolanaSignature(intent, transactionData, log) {
       
       try {
         const { signature, signedTransaction, intentHash: _, signer: __, ...intentData } = intent;
+
+        if ('privacy' in intentData) {
+          delete intentData.privacy;
+        }
         
         if (!intentData.instructions && intent.transaction?.instructions) {
           Object.assign(intentData, {

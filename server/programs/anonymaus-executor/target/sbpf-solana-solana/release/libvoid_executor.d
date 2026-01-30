@@ -1,0 +1,1 @@
+C:\Users\kenwa\OneDrive\Desktop\void_sol\server\programs\anonymaus-executor\target\sbpf-solana-solana\release\libvoid_executor.rlib: C:\Users\kenwa\OneDrive\Desktop\void_sol\server\programs\anonymaus-executor\src\lib.rs

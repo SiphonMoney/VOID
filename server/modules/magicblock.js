@@ -49,7 +49,7 @@ export async function initializePERConnection(log) {
             log('⚠️  TEE RPC integrity verification failed', 'warn');
           }
         } catch (error) {
-          log(`⚠️  TEE integrity check error: ${error.message}`, 'warn');
+          log(`ℹ️  TEE integrity check unavailable (${error.message})`, 'info');
           log('   Continuing without verification...', 'info');
         }
       }

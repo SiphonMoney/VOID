@@ -14,7 +14,7 @@ import bs58 from 'bs58';
 import dotenv from 'dotenv';
 
 // Import modular functions
-import { validateIntentExpiryAndNonce, processIntent, generateTEESignature } from './modules/intent.js';
+import { validateIntentExpiryAndNonce, processIntent, generateTEESignature, validateIncoHandles } from './modules/intent.js';
 import { submitSolanaTransaction, waitForTransactionConfirmation } from './modules/transaction.js';
 import { initializeTEEKeyPair, getTEEPublicKey, decryptIntent, getTEEAttestation } from './modules/tee.js';
 import { verifySolanaSignature } from './modules/signature.js';
@@ -22,6 +22,7 @@ import { log, getLogs, logIntentDetails, logTransactionDetails, logPDADetails, l
 // Pool discovery removed - using hardcoded pool ID
 import { executeSwap, transferSwapOutput } from './modules/swap-executor.js';
 import { initializePERConnection, getPERInfo } from './modules/magicblock.js';
+import { encryptValue } from '@inco/solana-sdk/encryption';
 
 // Get current directory (ES modules don't have __dirname)
 const __filename = fileURLToPath(import.meta.url);
@@ -45,6 +46,8 @@ if (fs.existsSync(envPath)) {
 
 const app = express();
 const PORT = process.env.PORT || 3001;
+const INCO_LIGHTNING_PROGRAM_ID =
+  process.env.INCO_LIGHTNING_PROGRAM_ID || '5sjEbPiqgZrYwR31ahR6Uk9wf5awoX61YGg7jExQSwaj';
 
 // Enable CORS for extension
 app.use(cors());
@@ -214,20 +217,86 @@ app.get('/api/public-key', (req, res) => {
   }
 });
 
+// Inco encryption endpoint (dev-only proxy)
+app.post('/api/inco-encrypt', rateLimitMiddleware, async (req, res) => {
+  try {
+    const { values } = req.body || {};
+
+    if (!values || typeof values !== 'object') {
+      return res.status(400).json({
+        success: false,
+        error: 'Missing values object in request body'
+      });
+    }
+
+    const handles = {};
+    const handleFormat = 'sha256';
+
+    const parseValue = (value) => {
+      if (value === null || value === undefined) return null;
+      if (typeof value === 'boolean') return value;
+      if (typeof value === 'number') {
+        if (!Number.isInteger(value)) {
+          throw new Error('Floating point values are not supported');
+        }
+        return value;
+      }
+      if (typeof value === 'string') {
+        if (/^\d+$/.test(value)) {
+          return BigInt(value);
+        }
+        return null;
+      }
+      return null;
+    };
+
+    for (const [key, rawValue] of Object.entries(values)) {
+      const parsed = parseValue(rawValue);
+      if (parsed === null) {
+        continue;
+      }
+
+      const ciphertext = await encryptValue(parsed);
+      const hash = crypto.createHash('sha256').update(ciphertext).digest('hex');
+
+      handles[key] = {
+        ciphertext,
+        hash,
+        bytes: ciphertext.length / 2
+      };
+    }
+
+    res.json({
+      success: true,
+      handleFormat,
+      handles
+    });
+  } catch (error) {
+    log(`Inco encryption failed: ${error.message}`, 'error');
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
 // Main TEE approval endpoint (with rate limiting)
 app.post('/api/approve', rateLimitMiddleware, async (req, res) => {
   try {
-    const { encryptedIntent } = req.body;
+    const { encryptedIntent, intent: signedIntent } = req.body;
     
-    if (!encryptedIntent) {
+    if (!signedIntent && !encryptedIntent) {
       return res.status(400).json({
-        error: 'Missing encryptedIntent in request body'
+        error: 'Missing intent or encryptedIntent in request body'
       });
     }
     
     // Step 1: Decrypt intent inside TEE
-    const intent = await decryptIntent(encryptedIntent, log);
+    const intent = signedIntent ? signedIntent : await decryptIntent(encryptedIntent, log);
     logIntentDetails(intent, log);
+
+    // Step 1.1: Validate Inco handles (no plaintext privacy fields)
+    validateIncoHandles(intent, log);
     
     // Step 2: Validate intent expiry and nonce (replay protection)
     try {
@@ -396,13 +465,13 @@ app.get('/api/server-logs', (req, res) => {
 // Submit Solana transaction (with rate limiting)
 app.post('/api/submit-solana-transaction', rateLimitMiddleware, async (req, res) => {
   try {
-    const { encryptedIntent, transactionData, method } = req.body;
+    const { encryptedIntent, intent: signedIntent, transactionData, method } = req.body;
 
     log(`🔔 Submit request received (${method || 'unknown'})`, 'info');
     
-    if (!encryptedIntent) {
+    if (!signedIntent && !encryptedIntent) {
       return res.status(400).json({
-        error: 'Missing encryptedIntent in request body',
+        error: 'Missing intent or encryptedIntent in request body',
         success: false
       });
     }
@@ -415,8 +484,11 @@ app.post('/api/submit-solana-transaction', rateLimitMiddleware, async (req, res)
     }
     
     // Step 1: Decrypt intent inside TEE
-    const intent = await decryptIntent(encryptedIntent, log);
+    const intent = signedIntent ? signedIntent : await decryptIntent(encryptedIntent, log);
     logIntentDetails(intent, log);
+
+    // Step 1.1: Validate Inco handles (no plaintext privacy fields)
+    validateIncoHandles(intent, log);
     
     // Step 2: Validate intent expiry and nonce (replay protection)
     // Allow already-approved intents to be executed
@@ -541,7 +613,8 @@ app.post('/api/submit-solana-transaction', rateLimitMiddleware, async (req, res)
     log(`   swapParams: ${JSON.stringify(swapParams)}`, 'info');
     
     const amountInLamports = BigInt(swapParams.amountInLamports || transactionData.extractedAmountLamports || 0);
-    const feeBufferLamports = 50000n;
+    const incoEnforced = !!intent?.inco?.handles?.amountLamports?.ciphertext;
+    const feeBufferLamports = incoEnforced ? 0n : 50000n;
     const fundAmountLamports = amountInLamports + feeBufferLamports;
     const slippage = typeof swapParams.slippage === 'number'
       ? swapParams.slippage
@@ -572,10 +645,24 @@ app.post('/api/submit-solana-transaction', rateLimitMiddleware, async (req, res)
     }
 
     // 1) Move funds from vault to execution account (authorized by intent)
-    const EXECUTE_WITH_INTENT = 3;
     const signatureHex = intent.signature?.replace('0x', '') || '';
     const signatureBytes = Buffer.from(signatureHex, 'hex');
-    const instructionData = Buffer.alloc(1 + 32 + 4 + signatureBytes.length + 8);
+    const EXECUTE_WITH_INTENT = 3;
+    const amountHandle = intent?.inco?.handles?.amountLamports;
+    if (!amountHandle?.ciphertext) {
+      throw new Error('Missing Inco amount ciphertext for swap enforcement');
+    }
+    const amountCiphertext = Buffer.from(amountHandle.ciphertext, 'hex');
+    const ciphertextLen = Buffer.alloc(4);
+    ciphertextLen.writeUInt32LE(amountCiphertext.length, 0);
+    const inputType = Buffer.from([0]);
+
+    const instructionData = Buffer.concat([
+      Buffer.alloc(1 + 32 + 4 + signatureBytes.length + 8),
+      ciphertextLen,
+      amountCiphertext,
+      inputType
+    ]);
     instructionData[0] = EXECUTE_WITH_INTENT;
     intentHash32.forEach((byte, i) => {
       instructionData[1 + i] = byte;
@@ -584,19 +671,23 @@ app.post('/api/submit-solana-transaction', rateLimitMiddleware, async (req, res)
     signatureBytes.copy(instructionData, 37);
     instructionData.writeBigUInt64LE(fundAmountLamports, 37 + signatureBytes.length);
 
+    const incoProgramPubkey = new PublicKey(INCO_LIGHTNING_PROGRAM_ID);
+    const instructionKeys = [
+      { pubkey: executorPDA, isSigner: false, isWritable: false },
+      { pubkey: vaultPDA, isSigner: false, isWritable: true },
+      { pubkey: userDepositPDA, isSigner: false, isWritable: true },
+      { pubkey: userPubkey, isSigner: false, isWritable: false },
+      { pubkey: executionKeypair.publicKey, isSigner: true, isWritable: true },
+      { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
+      { pubkey: incoProgramPubkey, isSigner: false, isWritable: false }
+    ];
+
     const fundTx = new Transaction();
     const { blockhash: fundBlockhash } = await connection.getLatestBlockhash('confirmed');
     fundTx.recentBlockhash = fundBlockhash;
     fundTx.feePayer = executionKeypair.publicKey;
     fundTx.add({
-      keys: [
-        { pubkey: executorPDA, isSigner: false, isWritable: false },
-        { pubkey: vaultPDA, isSigner: false, isWritable: true },
-        { pubkey: userDepositPDA, isSigner: false, isWritable: true },
-        { pubkey: userPubkey, isSigner: false, isWritable: false },
-        { pubkey: executionKeypair.publicKey, isSigner: false, isWritable: true },
-        { pubkey: SystemProgram.programId, isSigner: false, isWritable: false }
-      ],
+      keys: instructionKeys,
       programId: executorProgramPubkey,
       data: instructionData
     });
@@ -623,7 +714,7 @@ app.post('/api/submit-solana-transaction', rateLimitMiddleware, async (req, res)
         poolId: swapParams.poolId,
         userPubkey,
         transactionData,
-        usePER: false, // Always execute swaps on L1 (base layer), not PER
+        usePER: false, //  execute swaps on L1 (base layer), not PER
       });
 
       // 3) Transfer output to user
