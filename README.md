@@ -1,4 +1,4 @@
-# VØID — Privacy Layer for Solana
+# VØID — Web3 Anonymizer for Solana
 
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Solana](https://img.shields.io/badge/Solana-devnet-purple.svg)](https://solana.com)
