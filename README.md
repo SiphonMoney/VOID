@@ -2,7 +2,6 @@
 
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Solana](https://img.shields.io/badge/Solana-devnet-purple.svg)](https://solana.com)
-[![Status](https://img.shields.io/badge/status-prototype-yellow.svg)](https://github.com)
 
 VØID is a **privacy-first execution layer** for Solana that enables confidential transactions through intent-based architecture. Users sign intents (not raw transactions), sensitive data is encrypted with **Inco Lightning** before leaving the client, and execution is coordinated by a **TEE server** with **MagicBlock PER** integration for high-performance private settlement.
 
